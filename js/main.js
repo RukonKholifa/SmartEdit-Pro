@@ -442,10 +442,19 @@
             setStatus("Applying razor cuts...", "busy");
             return jsx("BeatSync.applyCuts(" + arg({ beats: state.cutTimes, options: opts }) + ");").then(function (res) {
                 if (!res || !res.ok) {
-                    setStatus((res && res.error) || "Failed to apply cuts.", "error");
+                    var err = (res && res.error) ? res.error : "Failed to apply cuts.";
+                    setStatus(err + "  See debug log (C:\\SmartEditPro_debug.txt).", "error");
                     return;
                 }
-                setStatus("Applied " + (res.cuts || state.cutTimes.length) + " cuts (no markers placed).", "ok");
+                var msg = "Applied " + (res.cuts || 0) + " cuts";
+                if (res.skipped) msg += " (" + res.skipped + " skipped)";
+                if (res.fps) msg += " at " + res.fps.toFixed(2) + " fps";
+                msg += ".";
+                if ((res.cuts || 0) === 0) {
+                    setStatus(msg + "  See C:\\SmartEditPro_debug.txt for details.", "error");
+                } else {
+                    setStatus(msg, "ok");
+                }
             });
         });
     }

@@ -198,47 +198,248 @@ var BeatSync = (function () {
         return SmartEditPro.respond({ ok: true, removed: removed });
     }
 
-    function applyCuts(payloadJson) {
+    /* ------------------------------------------------------------------ */
+    /* Debug log (shared with PodcastSwitch: C:\SmartEditPro_debug.txt or  */
+    /* ~/SmartEditPro_debug.txt). Appends entries so we don't clobber the  */
+    /* Podcast log while the user is iterating.                             */
+    /* ------------------------------------------------------------------ */
+
+    var DEBUG_FILE_PATH = (function () {
+        var os = "";
+        try { os = String($.os || "").toLowerCase(); } catch (e) {}
+        if (os.indexOf("windows") !== -1) return "C:\\SmartEditPro_debug.txt";
+        return "~/SmartEditPro_debug.txt";
+    })();
+
+    function debugLog(msg) {
+        try {
+            var f = new File(DEBUG_FILE_PATH);
+            f.encoding = "UTF-8";
+            var opened = false;
+            try { opened = f.open("e"); } catch (eE) { opened = false; }
+            if (opened) { try { f.seek(0, 2); } catch (eS) {} }
+            else {
+                try { opened = f.open("a"); } catch (eA) { opened = false; }
+                if (!opened) opened = f.open("w");
+            }
+            if (!opened) return;
+            f.writeln("[" + (new Date()).toLocaleTimeString() + "] [BeatSync] " + msg);
+            f.close();
+        } catch (e) {}
+    }
+
+    function debugReset(header) {
+        try {
+            var f = new File(DEBUG_FILE_PATH);
+            f.encoding = "UTF-8";
+            if (!f.open("w")) return;
+            f.writeln("=== SmartEditPro BeatSync debug ===");
+            f.writeln("path : " + DEBUG_FILE_PATH);
+            f.writeln("time : " + (new Date()).toString());
+            if (header) f.writeln("note : " + header);
+            f.writeln("");
+            f.close();
+        } catch (e) {}
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Selected clip resolution                                             */
+    /* ------------------------------------------------------------------ */
+
+    function firstSelectedVideoClip(seq) {
+        try {
+            if (!seq.videoTracks) return null;
+            for (var v = 0; v < seq.videoTracks.numTracks; v++) {
+                var t = seq.videoTracks[v];
+                if (!t || !t.clips) continue;
+                for (var c = 0; c < t.clips.numItems; c++) {
+                    var clip = t.clips[c];
+                    if (!clip) continue;
+                    if (clip.isSelected && clip.isSelected()) return clip;
+                }
+            }
+        } catch (e) {}
+        return null;
+    }
+
+    function clipSeconds(clip, which) {
+        try {
+            var t = clip[which];
+            if (!t && t !== 0) return 0;
+            if (typeof t === "number") return t;
+            if (typeof t.seconds === "number") return t.seconds;
+            if (t.ticks) return Number(t.ticks) / SmartEditPro.TICKS_PER_SECOND;
+        } catch (e) {}
+        return 0;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Core razor: accepts a pre-computed seconds array.                    */
+    /* ------------------------------------------------------------------ */
+
+    /**
+     * Razor the active sequence at each time in `cutTimesInSeconds`.
+     * Uses `new Time()` + `t.seconds = ...` (Premiere's documented Time input
+     * for razor) which works more reliably than a ticks string across host
+     * versions.
+     *
+     * `opts`:
+     *   target = "selected" | "v1all"  (selected-clip = filter to that clip's
+     *                                   sequence range)
+     *   range  = "full" | "inout"      (informational, already applied upstream)
+     */
+    function applyCutsAtTimes(cutTimesInSeconds, opts) {
+        opts = opts || {};
         var seq = SmartEditPro.getActiveSequence();
-        if (!seq) return SmartEditPro.error("No active sequence.");
+        if (!seq) return { ok: false, error: "No active sequence." };
+
+        var times = (cutTimesInSeconds || []).slice();
+        times.sort(function (a, b) { return a - b; });
+
+        var seqName = "";
+        try { seqName = String(seq.name || ""); } catch (e) {}
+        var seqEndSec = 0;
+        try { seqEndSec = (seq.end && seq.end.seconds) ? Number(seq.end.seconds) : (Number(seq.end) / SmartEditPro.TICKS_PER_SECOND); } catch (e) {}
+        if (!seqEndSec) {
+            try { seqEndSec = (seq.duration && seq.duration.seconds) ? Number(seq.duration.seconds) : 0; } catch (e) {}
+        }
+        var fps = 30;
+        try {
+            if (seq.timebase) {
+                var ticksPerFrame = Number(seq.timebase);
+                if (ticksPerFrame > 0) fps = SmartEditPro.TICKS_PER_SECOND / ticksPerFrame;
+            }
+        } catch (e) {}
+
+        debugLog("applyCutsAtTimes: sequence='" + seqName + "' end=" + seqEndSec.toFixed(3) +
+                 "s fps=" + fps.toFixed(3) + " target=" + (opts.target || "selected") +
+                 " incomingTimes=" + times.length);
+        var preview = times.slice(0, 5).map(function (x) { return Number(x).toFixed(3); }).join(", ");
+        debugLog("  first 5 cut times: [" + preview + "]");
+
+        // Selected-clip mode: filter cuts to the selected clip's sequence range.
+        var clipLo = 0, clipHi = seqEndSec;
+        if ((opts.target || "selected") === "selected") {
+            var sel = firstSelectedVideoClip(seq);
+            if (sel) {
+                clipLo = clipSeconds(sel, "start");
+                clipHi = clipSeconds(sel, "end");
+                debugLog("  selected clip range: " + clipLo.toFixed(3) + "s - " + clipHi.toFixed(3) + "s");
+            } else {
+                debugLog("  selected clip: NONE found - falling back to full sequence");
+            }
+        }
+
+        var applied = 0;
+        var skipped = 0;
+        var razorErrors = [];
+        var razorOk = 0;
+        var razorFalsy = 0;
+
+        for (var i = 0; i < times.length; i++) {
+            var sec = Number(times[i]);
+            if (!(sec > 0)) { skipped++; continue; }
+            if (sec >= seqEndSec - 0.001) { skipped++; continue; }
+            if (sec < clipLo + 0.001 || sec > clipHi - 0.001) { skipped++; continue; }
+
+            var t;
+            try { t = new Time(); t.seconds = sec; } catch (eT) { t = null; }
+            if (!t) { skipped++; continue; }
+
+            try {
+                var ret = seq.razor(t);
+                if (ret === false) {
+                    razorFalsy++;
+                    // Fallback: per-track razor.
+                    for (var v = 0; v < (seq.videoTracks ? seq.videoTracks.numTracks : 0); v++) {
+                        var vt = seq.videoTracks[v];
+                        if (vt && typeof vt.razor === "function") {
+                            try { vt.razor(t); } catch (eVt) {}
+                        }
+                    }
+                } else {
+                    razorOk++;
+                }
+                applied++;
+                if (i < 5) debugLog("  razor(" + sec.toFixed(3) + "s) -> " + String(ret));
+            } catch (eR) {
+                razorErrors.push("@" + sec.toFixed(3) + ": " + eR);
+                if (i < 5) debugLog("  razor(" + sec.toFixed(3) + "s) THREW: " + eR);
+                // Per-track fallback on exception too.
+                try {
+                    for (var v2 = 0; v2 < (seq.videoTracks ? seq.videoTracks.numTracks : 0); v2++) {
+                        var vt2 = seq.videoTracks[v2];
+                        if (vt2 && typeof vt2.razor === "function") {
+                            try { vt2.razor(t); applied++; razorOk++; break; } catch (eVt2) {}
+                        }
+                    }
+                } catch (eFb) {}
+            }
+        }
+
+        debugLog("applyCutsAtTimes: done. applied=" + applied + " skipped=" + skipped +
+                 " razorOk=" + razorOk + " razorFalsy=" + razorFalsy +
+                 " exceptions=" + razorErrors.length);
+
+        return {
+            ok: true,
+            cuts: applied,
+            skipped: skipped,
+            razorOk: razorOk,
+            razorFalsy: razorFalsy,
+            sequenceEnd: seqEndSec,
+            fps: fps,
+            target: opts.target || "selected",
+            errors: razorErrors,
+            debugFile: DEBUG_FILE_PATH
+        };
+    }
+
+    function applyCuts(payloadJson) {
         var payload = safeParse(payloadJson, { beats: [], options: {} });
         var beats = payload.beats || [];
         var opts = payload.options || {};
-        if (!beats.length) return SmartEditPro.error("No beats provided.");
+        var mode = opts.mode || "beats";
 
-        var cuts = 0;
-        var errors = [];
-        try {
-            for (var i = 0; i < beats.length; i++) {
-                var seconds = beats[i];
-                try {
-                    if (typeof seq.razor === "function") {
-                        seq.razor(SmartEditPro.secondsToTicks(seconds));
-                        cuts++;
-                    } else if (seq.videoTracks && seq.videoTracks.numTracks > 0) {
-                        // Fallback: razor each video track explicitly.
-                        for (var v = 0; v < seq.videoTracks.numTracks; v++) {
-                            var vt = seq.videoTracks[v];
-                            if (vt && typeof vt.razor === "function") {
-                                vt.razor(SmartEditPro.secondsToTicks(seconds));
-                            }
-                        }
-                        cuts++;
-                    }
-                } catch (eRazor) {
-                    errors.push("@" + seconds.toFixed(3) + ": " + eRazor);
+        debugReset("applyCuts mode=" + mode);
+
+        // Fixed-frames mode: generate the cuts from FPS here so the JS side
+        // stays agnostic of the sequence's timebase (only if main.js didn't
+        // already provide the array).
+        if (mode === "frames" && (!beats || !beats.length)) {
+            var seq = SmartEditPro.getActiveSequence();
+            if (!seq) return SmartEditPro.error("No active sequence.");
+            var frameInterval = Math.max(1, parseInt(opts.frameInterval, 10) || 1);
+            var fps = 30;
+            try {
+                if (seq.timebase) {
+                    var tpf = Number(seq.timebase);
+                    if (tpf > 0) fps = SmartEditPro.TICKS_PER_SECOND / tpf;
                 }
+            } catch (eF) {}
+            var startSec = Math.max(0, Number(opts.startSec) || 0);
+            var endSec = Number(opts.endSec);
+            if (!endSec || !(endSec > 0)) {
+                try {
+                    endSec = (seq.end && seq.end.seconds) ? Number(seq.end.seconds) : Number(seq.end) / SmartEditPro.TICKS_PER_SECOND;
+                } catch (eE) {}
             }
-        } catch (e) {
-            return SmartEditPro.error("Apply cuts failed: " + e);
+            if (!(endSec > startSec)) return SmartEditPro.error("Bad cut range (end<=start).");
+
+            var step = frameInterval / fps;
+            var times = [];
+            for (var s = startSec + step; s < endSec; s += step) times.push(s);
+            debugLog("FixedFrames: fps=" + fps.toFixed(3) + " interval=" + frameInterval +
+                     " step=" + step.toFixed(4) + "s range=" + startSec.toFixed(3) +
+                     "-" + endSec.toFixed(3) + "s -> " + times.length + " cut times");
+            beats = times;
         }
 
-        return SmartEditPro.respond({
-            ok: true,
-            cuts: cuts,
-            target: opts.target || "selected",
-            errors: errors
-        });
+        if (!beats.length) return SmartEditPro.error("No beats provided.");
+
+        var res = applyCutsAtTimes(beats, opts);
+        if (!res.ok) return SmartEditPro.error(res.error || "Apply cuts failed.");
+        return SmartEditPro.respond(res);
     }
 
     return {
@@ -247,6 +448,21 @@ var BeatSync = (function () {
         exportTrackAudio: exportTrackAudio,
         previewMarkers: previewMarkers,
         applyCuts: applyCuts,
-        clearMarkers: clearMarkers
+        applyCutsAtTimes: function (arrJson, optsJson) {
+            var arr = safeParse(arrJson, []);
+            var opts = safeParse(optsJson, {});
+            debugReset("applyCutsAtTimes");
+            var r = applyCutsAtTimes(arr, opts);
+            if (!r.ok) return SmartEditPro.error(r.error || "Apply failed.");
+            return SmartEditPro.respond(r);
+        },
+        clearMarkers: clearMarkers,
+        debugLog: function (msg) { debugLog(String(msg || "")); return SmartEditPro.respond({ ok: true }); }
     };
 })();
+
+// Top-level convenience so `applyCutsAtTimes([...])` can be called directly
+// from evalScript without the BeatSync. prefix.
+function applyCutsAtTimes(arr) {
+    return BeatSync.applyCutsAtTimes(JSON.stringify(arr || []), "{}");
+}
