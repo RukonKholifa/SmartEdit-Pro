@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <title>SmartEdit Pro</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="app">
+        <header class="app-header">
+            <div class="brand">
+                <span class="brand-mark"></span>
+                <span class="brand-name">SmartEdit <strong>Pro</strong></span>
+            </div>
+            <span class="brand-version">v1.0.0</span>
+        </header>
+
+        <!-- ============== SECTION 1: BEAT SYNC CUTTER ============== -->
+        <section class="card" id="section-beat">
+            <div class="card-header">
+                <h2 class="card-title">Beat Sync Cutter</h2>
+                <span class="card-tag">Music &rarr; Cuts</span>
+            </div>
+
+            <div class="card-body">
+                <div class="row">
+                    <label class="label" for="bs-music-track" title="Audio track that contains the music / beat reference">Music Track</label>
+                    <select id="bs-music-track" class="control"></select>
+                </div>
+
+                <div class="row">
+                    <label class="label" for="bs-target-mode" title="Which video clip(s) should be cut at the detected beats">Video Clip Target</label>
+                    <select id="bs-target-mode" class="control">
+                        <option value="selected">Selected Clip</option>
+                        <option value="v1all">All clips on V1</option>
+                    </select>
+                </div>
+
+                <div class="row two-col">
+                    <div>
+                        <label class="label" for="bs-interval" title="Place a cut every N beats (1 = every beat)">Cut every N beats</label>
+                        <div class="inline">
+                            <input type="number" id="bs-interval" class="control compact" min="1" max="8" value="1">
+                            <input type="range" id="bs-interval-slider" class="slider" min="1" max="8" value="1">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <label class="label" for="bs-sensitivity" title="Low = only strong transients, High = soft beats too">Beat Sensitivity</label>
+                    <div class="inline">
+                        <input type="range" id="bs-sensitivity" class="slider" min="1" max="100" value="50">
+                        <span class="value-pill" id="bs-sensitivity-val">50</span>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <label class="label" for="bs-threshold" title="Beats below this audio level are ignored">Min Audio Level (dB)</label>
+                    <input type="number" id="bs-threshold" class="control" min="-60" max="0" step="1" value="-30">
+                </div>
+
+                <div class="row">
+                    <span class="label" title="Use whole clip or only the section between sequence In/Out points">Range Mode</span>
+                    <div class="radio-group">
+                        <label class="radio">
+                            <input type="radio" name="bs-range" value="full" checked>
+                            <span>Full Clip</span>
+                        </label>
+                        <label class="radio">
+                            <input type="radio" name="bs-range" value="inout">
+                            <span>In/Out Range Only</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="info-box" id="bs-info">No beats detected yet.</div>
+
+                <div class="button-grid">
+                    <button class="btn primary" id="bs-detect" title="Analyze the music track and detect beats">Detect Beats</button>
+                    <button class="btn" id="bs-preview" title="Place temporary timeline markers at every detected beat">Preview Markers</button>
+                    <button class="btn accent" id="bs-apply" title="Razor-cut the target clip(s) at every detected beat">Apply Cuts</button>
+                    <button class="btn ghost" id="bs-clear" title="Remove preview markers from the timeline">Clear Markers</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============== SECTION 2: PODCAST SMART SWITCHER ============== -->
+        <section class="card" id="section-podcast">
+            <div class="card-header">
+                <h2 class="card-title">Podcast Smart Switcher</h2>
+                <span class="card-tag">Multi-mic &rarr; Multi-cam</span>
+            </div>
+
+            <div class="card-body">
+                <div class="row">
+                    <span class="label" title="How many speakers are in this podcast">Number of Speakers</span>
+                    <div class="radio-group">
+                        <label class="radio">
+                            <input type="radio" name="ps-speakers" value="2" checked>
+                            <span>2</span>
+                        </label>
+                        <label class="radio">
+                            <input type="radio" name="ps-speakers" value="3">
+                            <span>3</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="speaker-table" id="ps-speaker-table">
+                    <!-- Filled by main.js -->
+                </div>
+
+                <div class="row">
+                    <label class="label" for="ps-silence" title="Audio level below this dB is treated as silence">Silence threshold (dB)</label>
+                    <div class="inline">
+                        <input type="range" id="ps-silence-slider" class="slider" min="-60" max="0" value="-40">
+                        <input type="number" id="ps-silence" class="control compact" min="-60" max="0" value="-40">
+                    </div>
+                </div>
+
+                <div class="row two-col">
+                    <div>
+                        <label class="label" for="ps-min-duration" title="Minimum time a speaker must hold the floor before switching">Min Switch Duration (ms)</label>
+                        <input type="number" id="ps-min-duration" class="control" min="0" step="50" value="500">
+                    </div>
+                    <div>
+                        <label class="label" for="ps-buffer" title="Frames of overlap before/after each switch">Buffer Frames</label>
+                        <input type="number" id="ps-buffer" class="control" min="0" step="1" value="5">
+                    </div>
+                </div>
+
+                <div class="preview-wrap">
+                    <span class="label small">Speaker Timeline Preview</span>
+                    <div class="preview-bar" id="ps-preview"></div>
+                    <div class="preview-legend" id="ps-legend"></div>
+                </div>
+
+                <div class="button-grid">
+                    <button class="btn primary" id="ps-analyze" title="Analyze mic tracks and preview the switching plan">Analyze &amp; Preview</button>
+                    <button class="btn accent" id="ps-apply" title="Apply the switching plan to the timeline">Apply Edit</button>
+                    <button class="btn ghost" id="ps-undo" title="Revert the last applied edit">Undo</button>
+                </div>
+            </div>
+        </section>
+
+        <footer class="status-bar" id="status-bar">
+            <span class="status-dot" id="status-dot"></span>
+            <span id="status-text">Ready.</span>
+        </footer>
+
+        <div class="credit-footer">
+            Designed by <a href="#" id="credit-link" data-url="https://www.instagram.com/rukon_kholifa/">@rukon_kholifa</a>
+        </div>
+    </div>
+
+    <script src="js/csinterface.js"></script>
+    <script src="js/beatDetector.js"></script>
+    <script src="js/main.js"></script>
+</body>
+</html>

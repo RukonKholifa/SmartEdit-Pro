@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SmartEdit Pro - CEP Manifest
+  Adobe CEP requires this file to live at CSXS/manifest.xml inside the
+  extension folder. Even though the project layout in the README lists it
+  at the root, CEP itself only loads CSXS/manifest.xml.
+-->
+<ExtensionManifest Version="11.0"
+                   ExtensionBundleId="com.smarteditpro.bundle"
+                   ExtensionBundleVersion="1.0.0"
+                   ExtensionBundleName="SmartEdit Pro"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    <ExtensionList>
+        <Extension Id="com.smarteditpro.panel" Version="1.0.0"/>
+    </ExtensionList>
+    <ExecutionEnvironment>
+        <HostList>
+            <Host Name="PPRO" Version="[22.0,99.9]"/>
+        </HostList>
+        <LocaleList>
+            <Locale Code="All"/>
+        </LocaleList>
+        <RequiredRuntimeList>
+            <RequiredRuntime Name="CSXS" Version="11.0"/>
+        </RequiredRuntimeList>
+    </ExecutionEnvironment>
+    <DispatchInfoList>
+        <Extension Id="com.smarteditpro.panel">
+            <DispatchInfo>
+                <Resources>
+                    <MainPath>./index.html</MainPath>
+                    <ScriptPath>./jsx/hostscript.jsx</ScriptPath>
+                    <CEFCommandLine>
+                        <Parameter>--enable-nodejs</Parameter>
+                        <Parameter>--mixed-context</Parameter>
+                        <Parameter>--allow-file-access-from-files</Parameter>
+                        <Parameter>--allow-file-access</Parameter>
+                    </CEFCommandLine>
+                </Resources>
+                <Lifecycle>
+                    <AutoVisible>true</AutoVisible>
+                </Lifecycle>
+                <UI>
+                    <Type>Panel</Type>
+                    <Menu>SmartEdit Pro</Menu>
+                    <Geometry>
+                        <Size>
+                            <Height>600</Height>
+                            <Width>320</Width>
+                        </Size>
+                        <MinSize>
+                            <Height>500</Height>
+                            <Width>300</Width>
+                        </MinSize>
+                        <MaxSize>
+                            <Height>2000</Height>
+                            <Width>800</Width>
+                        </MaxSize>
+                    </Geometry>
+                    <Icons>
+                        <Icon Type="Normal">./icons/icon-normal.png</Icon>
+                        <Icon Type="RollOver">./icons/icon-rollover.png</Icon>
+                        <Icon Type="Disabled">./icons/icon-disabled.png</Icon>
+                        <Icon Type="DarkNormal">./icons/icon-dark-normal.png</Icon>
+                        <Icon Type="DarkRollOver">./icons/icon-dark-rollover.png</Icon>
+                    </Icons>
+                </UI>
+            </DispatchInfo>
+        </Extension>
+    </DispatchInfoList>
+</ExtensionManifest>

@@ -9,9 +9,9 @@ Thumbs.db
 *.swo
 
 # CEP runtime
+ZXPSignCmd.log
 *.zxp
 *.zip
-ZXPSignCmd.log
 
 # Logs / temp
 *.log
