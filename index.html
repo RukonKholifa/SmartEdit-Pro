@@ -19,6 +19,7 @@
         <nav class="tab-nav" role="tablist">
             <button class="tab-btn active" data-tab="beat" role="tab" aria-selected="true">Beat Sync</button>
             <button class="tab-btn" data-tab="podcast" role="tab" aria-selected="false">Podcast</button>
+            <button class="tab-btn" data-tab="flow" role="tab" aria-selected="false">Keyframe Flow</button>
         </nav>
 
         <!-- ============== TAB 1: BEAT SYNC CUTTER ============== -->
@@ -162,6 +163,89 @@
                     <button class="btn primary" id="ps-analyze" title="Analyze mic tracks and preview the switching plan">Analyze &amp; Preview</button>
                     <button class="btn accent" id="ps-apply" title="Apply the switching plan to the timeline">Apply Edit</button>
                     <button class="btn ghost" id="ps-undo" title="Revert the last applied edit">Undo</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============== TAB 3: KEYFRAME FLOW ============== -->
+        <section class="card tab-panel" id="section-flow" data-tab-panel="flow" role="tabpanel" hidden>
+            <div class="card-header">
+                <h2 class="card-title">Keyframe Flow</h2>
+                <span class="card-tag">Smooth &rarr; Ease</span>
+            </div>
+
+            <div class="card-body">
+                <div class="row">
+                    <span class="label" title="Properties whose keyframes will be eased">Properties</span>
+                    <div class="check-grid">
+                        <label class="check">
+                            <input type="checkbox" name="kf-prop" value="Opacity" checked>
+                            <span>Opacity</span>
+                        </label>
+                        <label class="check">
+                            <input type="checkbox" name="kf-prop" value="Scale">
+                            <span>Scale</span>
+                        </label>
+                        <label class="check">
+                            <input type="checkbox" name="kf-prop" value="Position">
+                            <span>Position</span>
+                        </label>
+                        <label class="check">
+                            <input type="checkbox" name="kf-prop" value="Rotation">
+                            <span>Rotation</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <span class="label" title="Which side(s) of each keyframe should be eased">Ease Type</span>
+                    <div class="radio-group stack">
+                        <label class="radio">
+                            <input type="radio" name="kf-ease" value="both" checked>
+                            <span>Ease In &amp; Out</span>
+                        </label>
+                        <label class="radio">
+                            <input type="radio" name="kf-ease" value="in">
+                            <span>Ease In Only</span>
+                        </label>
+                        <label class="radio">
+                            <input type="radio" name="kf-ease" value="out">
+                            <span>Ease Out Only</span>
+                        </label>
+                        <label class="radio">
+                            <input type="radio" name="kf-ease" value="linear">
+                            <span>Linear (reset)</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <label class="label" for="kf-strength" title="How strong the bezier handle pull is (0 = almost linear, 100 = maximum curve)">Influence %</label>
+                    <div class="inline">
+                        <input type="range" id="kf-strength" class="slider" min="0" max="100" value="50">
+                        <span class="value-pill" id="kf-strength-val">50</span>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <span class="label" title="Which clips should be affected">Apply To</span>
+                    <div class="radio-group">
+                        <label class="radio">
+                            <input type="radio" name="kf-scope" value="selected" checked>
+                            <span>Selected Clip Only</span>
+                        </label>
+                        <label class="radio">
+                            <input type="radio" name="kf-scope" value="v1all">
+                            <span>All Clips on V1</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="info-box" id="kf-info">No keyframes processed yet.</div>
+
+                <div class="button-stack">
+                    <button class="btn primary full" id="kf-apply" title="Apply the selected flow curve to matching keyframes">Apply Flow</button>
+                    <button class="btn outline full" id="kf-reset" title="Reset all matching keyframes to linear interpolation">Reset to Linear</button>
                 </div>
             </div>
         </section>

@@ -112,6 +112,7 @@ try {
     var _here = File($.fileName).path;
     $.evalFile(_here + "/beatSync.jsx");
     $.evalFile(_here + "/podcastSwitch.jsx");
+    $.evalFile(_here + "/keyframeFlow.jsx");
 } catch (eLoad) {
     // Non-fatal: main.js also calls evalFile on these paths.
 }

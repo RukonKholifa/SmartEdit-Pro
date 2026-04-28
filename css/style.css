@@ -251,6 +251,78 @@ input[type="range"].slider::-webkit-slider-thumb {
     gap: 6px;
     margin-top: 10px;
 }
+.button-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 10px;
+}
+.btn.full { width: 100%; }
+.btn.outline {
+    background: transparent;
+    border-color: var(--accent);
+    color: var(--accent);
+}
+.btn.outline:hover {
+    background: rgba(0, 212, 255, 0.08);
+    border-color: var(--accent);
+}
+
+/* ----- checkbox grid ----- */
+.check-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+}
+.check {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 8px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--panel-2);
+    cursor: pointer;
+    font-size: 11px;
+    transition: background 0.15s, border-color 0.15s;
+}
+.check:hover { background: var(--panel-hover); }
+.check input {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 12px; height: 12px;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    background: var(--bg);
+    cursor: pointer;
+    position: relative;
+    flex: 0 0 12px;
+}
+.check input:checked {
+    background: var(--accent);
+    border-color: var(--accent);
+}
+.check input:checked::after {
+    content: "";
+    position: absolute;
+    left: 3px; top: 0px;
+    width: 3px; height: 7px;
+    border: solid #001a22;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+}
+.check:has(input:checked) { border-color: var(--accent); }
+
+/* ----- stacked radio group (one per row) ----- */
+.radio-group.stack {
+    flex-direction: column;
+    gap: 4px;
+}
+.radio-group.stack .radio {
+    flex: none;
+    justify-content: flex-start;
+    padding: 5px 10px;
+}
 .btn {
     padding: 7px 10px;
     background: var(--panel-2);

@@ -565,12 +565,85 @@
         var includes = [
             "/jsx/hostscript.jsx",
             "/jsx/beatSync.jsx",
-            "/jsx/podcastSwitch.jsx"
+            "/jsx/podcastSwitch.jsx",
+            "/jsx/keyframeFlow.jsx"
         ];
         includes.forEach(function (rel) {
             var path = (ext + rel).replace(/\\/g, "/");
             cs.evalScript('$.evalFile("' + path + '")');
         });
+    }
+
+    /* ---------- Keyframe Flow wiring ---------- */
+    function bindKeyframeFlow() {
+        var strength = $("#kf-strength");
+        var strengthVal = $("#kf-strength-val");
+        if (strength && strengthVal) {
+            strength.addEventListener("input", function () {
+                strengthVal.textContent = strength.value;
+            });
+        }
+        var applyBtn = $("#kf-apply");
+        var resetBtn = $("#kf-reset");
+        if (applyBtn) applyBtn.addEventListener("click", onApplyFlow);
+        if (resetBtn) resetBtn.addEventListener("click", onResetFlow);
+    }
+
+    function getFlowOpts() {
+        var props = $$('input[name="kf-prop"]:checked').map(function (el) { return el.value; });
+        return {
+            properties: props,
+            easeType: (document.querySelector('input[name="kf-ease"]:checked') || {}).value || "both",
+            influence: parseInt($("#kf-strength").value, 10) || 50,
+            scope: (document.querySelector('input[name="kf-scope"]:checked') || {}).value || "selected"
+        };
+    }
+
+    function onApplyFlow() {
+        var opts = getFlowOpts();
+        if (!opts.properties.length) {
+            setStatus("Pick at least one property.", "error");
+            return;
+        }
+        setStatus("Applying flow to keyframes...", "busy");
+        jsx("KeyframeFlow.apply(" + arg(opts) + ");").then(function (res) {
+            if (!res || !res.ok) {
+                setStatus((res && res.error) || "Apply flow failed.", "error");
+                return;
+            }
+            renderFlowInfo(res, opts.easeType);
+            setStatus("Flow applied to " + (res.keyframes || 0) + " keyframe"
+                + ((res.keyframes === 1) ? "" : "s") + ".", "ok");
+        });
+    }
+
+    function onResetFlow() {
+        var opts = getFlowOpts();
+        if (!opts.properties.length) {
+            setStatus("Pick at least one property.", "error");
+            return;
+        }
+        setStatus("Resetting keyframes to linear...", "busy");
+        jsx("KeyframeFlow.reset(" + arg(opts) + ");").then(function (res) {
+            if (!res || !res.ok) {
+                setStatus((res && res.error) || "Reset failed.", "error");
+                return;
+            }
+            renderFlowInfo(res, "linear");
+            setStatus("Reset " + (res.keyframes || 0) + " keyframe"
+                + ((res.keyframes === 1) ? "" : "s") + " to linear.", "ok");
+        });
+    }
+
+    function renderFlowInfo(res, easeType) {
+        var info = $("#kf-info");
+        if (!info) return;
+        var msg = "Touched " + (res.keyframes || 0) + " keyframes on "
+            + (res.properties || 0) + " properties across "
+            + (res.clips || 0) + " clip" + ((res.clips === 1) ? "" : "s")
+            + " (" + (easeType || "linear") + ").";
+        info.textContent = msg;
+        info.classList.toggle("has-data", (res.keyframes || 0) > 0);
     }
 
     function bindCreditLink() {
@@ -610,6 +683,7 @@
         bindTabs();
         bindBeatSync();
         bindPodcast();
+        bindKeyframeFlow();
         bindCreditLink();
         loadTracks().then(function () {
             refreshTrackSelects();
