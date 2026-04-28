@@ -1,0 +1,19 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# CEP runtime
+*.zxp
+*.zip
+ZXPSignCmd.log
+
+# Logs / temp
+*.log
+tmp/
+.tmp/
