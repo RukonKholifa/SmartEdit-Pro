@@ -650,3 +650,19 @@ input[type="range"].slider::-webkit-slider-thumb {
 .coming-soon-sub { font-size: 11px; color: var(--text-dim); }
 
 .flow-sub[hidden] { display: none !important; }
+
+.diag-out {
+    margin: 8px 0 0;
+    padding: 8px 10px;
+    background: #0c0c0c;
+    border: 1px solid #1c1c1c;
+    border-radius: 6px;
+    font: 10.5px/1.45 ui-monospace, Menlo, Consolas, monospace;
+    color: #c6c6c6;
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 180px;
+    overflow-y: auto;
+}
+.diag-out .diag-ok  { color: var(--ok); }
+.diag-out .diag-bad { color: var(--danger); }

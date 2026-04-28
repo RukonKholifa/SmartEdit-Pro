@@ -35,9 +35,29 @@ var PodcastSwitch = (function () {
     /* Debug file                                                          */
     /* ------------------------------------------------------------------ */
 
+    // Pick a debug path the user is guaranteed to be able to write to. The
+    // root of C:\ frequently needs admin on Windows, so we prefer the user's
+    // Documents folder, then fall back to Folder.temp, then ~/.
     var DEBUG_FILE_PATH = (function () {
+        try {
+            var docs = Folder.myDocuments && Folder.myDocuments.fsName;
+            if (docs) {
+                var p = docs + ((String(docs).indexOf("\\") !== -1) ? "\\" : "/") + "SmartEditPro_debug.txt";
+                var probe = new File(p);
+                var ok = false;
+                try { ok = probe.open("a"); } catch (e1) {}
+                if (ok) { try { probe.close(); } catch (e2) {} return p; }
+            }
+        } catch (eDocs) {}
+        try {
+            var tmp = Folder.temp && Folder.temp.fsName;
+            if (tmp) {
+                var sep = (String(tmp).indexOf("\\") !== -1) ? "\\" : "/";
+                return tmp + sep + "SmartEditPro_debug.txt";
+            }
+        } catch (eTmp) {}
         var os = "";
-        try { os = String($.os || "").toLowerCase(); } catch (e) {}
+        try { os = String($.os || "").toLowerCase(); } catch (eOs) {}
         if (os.indexOf("windows") !== -1) return "C:\\SmartEditPro_debug.txt";
         return "~/SmartEditPro_debug.txt";
     })();

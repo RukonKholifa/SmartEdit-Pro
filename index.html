@@ -257,10 +257,12 @@
                         <div class="kv-row"><span class="kv-k">Timebase (ticks/frame)</span><span class="kv-v" id="kf-seq-timebase">-</span></div>
 
                         <div class="button-stack" style="margin-top:12px;">
-                            <button class="btn outline full" id="kf-refresh-info" title="Re-read the active sequence info">Refresh</button>
+                            <button class="btn outline full" id="kf-refresh-info" title="Re-read the active sequence info">Refresh Info</button>
+                            <button class="btn primary full" id="kf-ping-jsx" title="Run a minimal diagnostic against the ExtendScript engine">Ping JSX</button>
                             <button class="btn accent full" id="kf-reload-scripts" title="Re-evaluate all ExtendScript files (no Premiere restart)">Reload Scripts</button>
                         </div>
-                        <div class="info-box" id="kf-reload-info" style="margin-top:8px;">Scripts: not yet checked.</div>
+                        <div class="info-box" id="kf-reload-info" style="margin-top:8px;">Click Ping JSX to run a diagnostic.</div>
+                        <pre class="diag-out" id="kf-diag-out"></pre>
                     </div>
                 </div>
             </div>

@@ -175,6 +175,74 @@ function resetFlow(opts) {
     return KeyframeFlow.reset(JSON.stringify(opts || {}));
 }
 
+/**
+ * Bare-metal diagnostic. Verifies that:
+ *   - evalScript() is actually reaching Premiere's ExtendScript engine
+ *   - $.fileName / File / Folder APIs are usable
+ *   - SmartEditPro + feature namespaces registered
+ *   - the chosen debug file path is writable
+ * Never references a namespace that might be missing, so it always returns
+ * a valid JSON string the panel can parse.
+ */
+function pingJsx() {
+    var probe = {
+        ok: true,
+        engine: "ExtendScript",
+        ppro: false,
+        hasSmartEditPro: false,
+        hasBeatSync: false,
+        hasPodcastSwitch: false,
+        hasKeyframeFlow: false,
+        hasApplyCutsAtTimes: false,
+        hasApplyFlow: false,
+        jsxFileName: "",
+        jsxFolder: "",
+        documentsFolder: "",
+        tempFolder: "",
+        debugFilePath: "",
+        debugFileWritable: false,
+        writeError: ""
+    };
+    try { probe.ppro = (typeof app !== "undefined") && !!app.project; } catch (e) {}
+    try { probe.hasSmartEditPro   = (typeof SmartEditPro   !== "undefined"); } catch (e) {}
+    try { probe.hasBeatSync       = (typeof BeatSync       !== "undefined"); } catch (e) {}
+    try { probe.hasPodcastSwitch  = (typeof PodcastSwitch  !== "undefined"); } catch (e) {}
+    try { probe.hasKeyframeFlow   = (typeof KeyframeFlow   !== "undefined"); } catch (e) {}
+    try { probe.hasApplyCutsAtTimes = (typeof applyCutsAtTimes !== "undefined"); } catch (e) {}
+    try { probe.hasApplyFlow      = (typeof applyFlow      !== "undefined"); } catch (e) {}
+    try { probe.jsxFileName       = String($.fileName || ""); } catch (e) {}
+    try { probe.jsxFolder         = String(File($.fileName).path || ""); } catch (e) {}
+    try { probe.documentsFolder   = String(Folder.myDocuments.fsName); } catch (e) {}
+    try { probe.tempFolder        = String(Folder.temp.fsName); } catch (e) {}
+
+    // Pick the same path logic as the feature files.
+    try {
+        var p = "";
+        if (probe.documentsFolder) {
+            p = probe.documentsFolder + ((probe.documentsFolder.indexOf("\\") !== -1) ? "\\" : "/") + "SmartEditPro_debug.txt";
+        } else if (probe.tempFolder) {
+            p = probe.tempFolder + ((probe.tempFolder.indexOf("\\") !== -1) ? "\\" : "/") + "SmartEditPro_debug.txt";
+        } else {
+            p = "~/SmartEditPro_debug.txt";
+        }
+        probe.debugFilePath = p;
+        var f = new File(p);
+        if (f.open("a")) {
+            f.writeln("[" + (new Date()).toLocaleTimeString() + "] pingJsx OK");
+            f.close();
+            probe.debugFileWritable = true;
+        } else {
+            probe.writeError = "File.open('a') returned false";
+        }
+    } catch (eW) {
+        probe.writeError = String(eW);
+    }
+
+    // Return a plain JSON.stringify - avoid calling SmartEditPro.respond in
+    // case SmartEditPro itself failed to register.
+    try { return JSON.stringify(probe); } catch (eJ) { return '{"ok":false,"error":"JSON.stringify failed"}'; }
+}
+
 // Settings
 function getActiveSequenceInfo() {
     var seq = SmartEditPro.getActiveSequence();

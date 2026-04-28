@@ -443,7 +443,7 @@
             return jsx("BeatSync.applyCuts(" + arg({ beats: state.cutTimes, options: opts }) + ");").then(function (res) {
                 if (!res || !res.ok) {
                     var err = (res && res.error) ? res.error : "Failed to apply cuts.";
-                    setStatus(err + "  See debug log (C:\\SmartEditPro_debug.txt).", "error");
+                    setStatus(err + "  See debug log (Documents/SmartEditPro_debug.txt).", "error");
                     return;
                 }
                 var msg = "Applied " + (res.cuts || 0) + " cuts";
@@ -451,7 +451,7 @@
                 if (res.fps) msg += " at " + res.fps.toFixed(2) + " fps";
                 msg += ".";
                 if ((res.cuts || 0) === 0) {
-                    setStatus(msg + "  See C:\\SmartEditPro_debug.txt for details.", "error");
+                    setStatus(msg + "  See Documents/SmartEditPro_debug.txt for details.", "error");
                 } else {
                     setStatus(msg, "ok");
                 }
@@ -798,7 +798,7 @@
                 // throws silently. We re-query the debug file path either way.
                 if (!res || !res.ok) {
                     var err = (res && res.error) ? res.error : "Apply failed.";
-                    setStatus(err + "  See debug log (C:\\SmartEditPro_debug.txt).", "error");
+                    setStatus(err + "  See debug log (Documents/SmartEditPro_debug.txt).", "error");
                     return;
                 }
                 var msg = "Applied " + (res.cuts || 0) + " cuts across " +
@@ -909,9 +909,70 @@
         if (resetBtn) resetBtn.addEventListener("click", onResetFlow);
 
         var refreshBtn = $("#kf-refresh-info");
+        var pingBtn = $("#kf-ping-jsx");
         var reloadBtn = $("#kf-reload-scripts");
         if (refreshBtn) refreshBtn.addEventListener("click", refreshSequenceInfo);
+        if (pingBtn) pingBtn.addEventListener("click", runPingJsx);
         if (reloadBtn) reloadBtn.addEventListener("click", reloadJsxScripts);
+    }
+
+    /**
+     * Minimal JSX health probe. Runs a JSON.stringify-returning pingJsx()
+     * function on the host side that never references a namespace - so we
+     * get a clean structured answer even if BeatSync/PodcastSwitch/
+     * KeyframeFlow failed to register. Result is rendered into a <pre>
+     * inside Settings for easy copy-paste.
+     */
+    function runPingJsx() {
+        setStatus("Pinging ExtendScript...", "busy");
+        var info = $("#kf-reload-info");
+        var out = $("#kf-diag-out");
+        if (info) info.textContent = "Running Ping JSX...";
+        jsx("(typeof pingJsx !== 'undefined') ? pingJsx() : JSON.stringify({ok:false,error:'pingJsx is undefined - hostscript.jsx not loaded'});").then(function (res) {
+            renderPing(res, out, info);
+        });
+    }
+
+    function renderPing(res, out, info, silent) {
+        if (!res) {
+            if (info) info.textContent = "No response from ExtendScript - is Premiere running?";
+            if (out) out.textContent = "";
+            if (!silent) setStatus("JSX ping: no response.", "error");
+            return;
+        }
+        var lines = [];
+        var missing = [];
+        ["hasSmartEditPro","hasBeatSync","hasPodcastSwitch","hasKeyframeFlow","hasApplyCutsAtTimes","hasApplyFlow"].forEach(function (k) {
+            if (!res[k]) missing.push(k.replace(/^has/, ""));
+        });
+        lines.push("Premiere app.project : " + (res.ppro ? "yes" : "no"));
+        lines.push("SmartEditPro shim    : " + (res.hasSmartEditPro ? "yes" : "no"));
+        lines.push("BeatSync             : " + (res.hasBeatSync ? "yes" : "no"));
+        lines.push("PodcastSwitch        : " + (res.hasPodcastSwitch ? "yes" : "no"));
+        lines.push("KeyframeFlow         : " + (res.hasKeyframeFlow ? "yes" : "no"));
+        lines.push("applyCutsAtTimes     : " + (res.hasApplyCutsAtTimes ? "yes" : "no"));
+        lines.push("applyFlow            : " + (res.hasApplyFlow ? "yes" : "no"));
+        lines.push("");
+        lines.push("jsxFileName   : " + (res.jsxFileName || "(none)"));
+        lines.push("jsxFolder     : " + (res.jsxFolder   || "(none)"));
+        lines.push("Documents     : " + (res.documentsFolder || "(none)"));
+        lines.push("Temp          : " + (res.tempFolder  || "(none)"));
+        lines.push("Debug file    : " + (res.debugFilePath || "(none)"));
+        lines.push("Debug writable: " + (res.debugFileWritable ? "yes" : "no"));
+        if (res.writeError) lines.push("Write error   : " + res.writeError);
+        if (res.error) lines.push("Error         : " + res.error);
+
+        if (out) out.textContent = lines.join("\n");
+        var summary;
+        if (!res.ppro) summary = "No active Premiere project yet. Open one and retry.";
+        else if (missing.length) summary = "Missing: " + missing.join(", ") + " - click Reload Scripts.";
+        else summary = "All systems go. Debug log: " + (res.debugFilePath || "?");
+        if (info) info.textContent = summary;
+        if (!silent) setStatus("JSX ping: " + summary, missing.length ? "error" : "ok");
+        else if (missing.length) {
+            // Silent mode: still surface a problem so user sees it.
+            setStatus("JSX: " + missing.join(", ") + " missing. Flow > Settings > Reload Scripts.", "error");
+        }
     }
 
     function bindFlowSidebar() {
@@ -1177,6 +1238,14 @@
             renderSpeakerTable();
             setStatus("Ready.", "ok");
         });
+        // Fire a silent ping so the Settings pane already shows health even
+        // if the user never opens it. Wait a tick to let the JSX evalFile
+        // calls finish.
+        setTimeout(function () {
+            jsx("(typeof pingJsx !== 'undefined') ? pingJsx() : JSON.stringify({ok:false,error:'pingJsx is undefined'});").then(function (res) {
+                renderPing(res, $("#kf-diag-out"), $("#kf-reload-info"), /* silent */ true);
+            });
+        }, 500);
     }
 
     if (document.readyState === "complete" || document.readyState === "interactive") {
