@@ -106,13 +106,139 @@ var SmartEditPro = (function () {
     };
 })();
 
-// Eagerly load the feature scripts so their namespaces (BeatSync, PodcastSwitch)
-// are available regardless of how main.js bootstraps the host scripts.
+// ==========================================================================
+// Load feature scripts into the SAME ExtendScript evaluation context. The
+// //@include preprocessor directive inlines the files at compile time so
+// their namespaces and the global wrappers below are all part of one script.
+// ==========================================================================
+//@include "beatSync.jsx"
+//@include "podcastSwitch.jsx"
+//@include "keyframeFlow.jsx"
+
+// Runtime evalFile fallback - keeps things working if the //@include
+// directive is ignored by a particular host version.
 try {
     var _here = File($.fileName).path;
     $.evalFile(_here + "/beatSync.jsx");
     $.evalFile(_here + "/podcastSwitch.jsx");
     $.evalFile(_here + "/keyframeFlow.jsx");
 } catch (eLoad) {
-    // Non-fatal: main.js also calls evalFile on these paths.
+    // Non-fatal.
+}
+
+/* --------------------------------------------------------------------------
+   Global wrappers around the namespaced functions so evalScript() calls can
+   invoke them directly (e.g. `applyCutsAtTimes([...])`). These thin proxies
+   also make it easy for main.js to `typeof fnName !== "undefined"` and
+   surface a clear "JSX not loaded" message when a script failed to register.
+   -------------------------------------------------------------------------- */
+
+function SE_safeCall(fn, args) {
+    try {
+        return fn.apply(null, args || []);
+    } catch (e) {
+        return SmartEditPro.error(String(e));
+    }
+}
+
+// Beat Sync
+function applyCutsAtTimes(arr, opts) {
+    if (typeof BeatSync === "undefined") return SmartEditPro.error("BeatSync not loaded.");
+    return BeatSync.applyCutsAtTimes(JSON.stringify(arr || []), JSON.stringify(opts || {}));
+}
+function previewMarkers(beatsArr) {
+    if (typeof BeatSync === "undefined") return SmartEditPro.error("BeatSync not loaded.");
+    return BeatSync.previewMarkers(JSON.stringify({ beats: beatsArr || [] }));
+}
+function clearMarkers() {
+    if (typeof BeatSync === "undefined") return SmartEditPro.error("BeatSync not loaded.");
+    return BeatSync.clearMarkers();
+}
+
+// Podcast Smart Switcher
+function applyPodcastEdit(edl, opts) {
+    if (typeof PodcastSwitch === "undefined") return SmartEditPro.error("PodcastSwitch not loaded.");
+    return PodcastSwitch.applyEdit(JSON.stringify({ edl: edl || [], options: opts || {} }));
+}
+function resolveMicClips(opts) {
+    if (typeof PodcastSwitch === "undefined") return SmartEditPro.error("PodcastSwitch not loaded.");
+    return PodcastSwitch.resolveMicClips(JSON.stringify(opts || {}));
+}
+
+// Keyframe Flow
+function applyFlow(opts) {
+    if (typeof KeyframeFlow === "undefined") return SmartEditPro.error("KeyframeFlow not loaded.");
+    return KeyframeFlow.apply(JSON.stringify(opts || {}));
+}
+function resetFlow(opts) {
+    if (typeof KeyframeFlow === "undefined") return SmartEditPro.error("KeyframeFlow not loaded.");
+    return KeyframeFlow.reset(JSON.stringify(opts || {}));
+}
+
+// Settings
+function getActiveSequenceInfo() {
+    var seq = SmartEditPro.getActiveSequence();
+    if (!seq) return SmartEditPro.error("No active sequence.");
+    var info = { ok: true };
+    try { info.name = String(seq.name || ""); } catch (e) {}
+    try {
+        if (seq.timebase) {
+            var tpf = Number(seq.timebase);
+            info.timebase = seq.timebase;
+            info.fps = (tpf > 0) ? SmartEditPro.TICKS_PER_SECOND / tpf : null;
+        }
+    } catch (e) {}
+    try {
+        info.endSeconds = (seq.end && seq.end.seconds) ? Number(seq.end.seconds) :
+            (seq.end ? Number(seq.end) / SmartEditPro.TICKS_PER_SECOND : 0);
+    } catch (e) {}
+    return SmartEditPro.respond(info);
+}
+
+/**
+ * Re-evaluate all feature scripts from the filesystem. Used by the panel's
+ * Settings > Reload Scripts button so the user never has to restart Premiere
+ * after editing a .jsx file.
+ */
+function reloadScripts(extensionPath) {
+    var t0 = (new Date()).getTime();
+    var loaded = [];
+    var errors = [];
+    var files = ["hostscript.jsx", "beatSync.jsx", "podcastSwitch.jsx", "keyframeFlow.jsx"];
+    var base = "";
+    try {
+        if (extensionPath) {
+            base = String(extensionPath).replace(/\\/g, "/");
+            if (base.charAt(base.length - 1) === "/") base = base.substring(0, base.length - 1);
+            base += "/jsx";
+        } else {
+            base = File($.fileName).path;
+        }
+    } catch (e) {
+        base = "";
+    }
+    for (var i = 0; i < files.length; i++) {
+        var p = base + "/" + files[i];
+        try {
+            var ok = $.evalFile(p);
+            if (ok === false) errors.push(p + ": evalFile returned false");
+            else loaded.push(files[i]);
+        } catch (eF) {
+            errors.push(p + ": " + eF);
+        }
+    }
+    var elapsed = (new Date()).getTime() - t0;
+    return SmartEditPro.respond({
+        ok: (errors.length === 0),
+        loaded: loaded,
+        errors: errors,
+        elapsedMs: elapsed,
+        have: {
+            BeatSync: (typeof BeatSync !== "undefined"),
+            PodcastSwitch: (typeof PodcastSwitch !== "undefined"),
+            KeyframeFlow: (typeof KeyframeFlow !== "undefined"),
+            applyCutsAtTimes: (typeof applyCutsAtTimes !== "undefined"),
+            applyFlow: (typeof applyFlow !== "undefined")
+        }
+    });
 }

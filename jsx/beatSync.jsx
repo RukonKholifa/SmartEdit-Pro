@@ -461,8 +461,5 @@ var BeatSync = (function () {
     };
 })();
 
-// Top-level convenience so `applyCutsAtTimes([...])` can be called directly
-// from evalScript without the BeatSync. prefix.
-function applyCutsAtTimes(arr) {
-    return BeatSync.applyCutsAtTimes(JSON.stringify(arr || []), "{}");
-}
+// Top-level convenience wrappers live in hostscript.jsx so they are defined
+// even when this file is re-evaluated in isolation.

@@ -839,8 +839,63 @@
         });
     }
 
-    /* ---------- Keyframe Flow wiring ---------- */
+    /* ==========================================================================
+       Keyframe Flow - JerryFlow-style panel
+       ========================================================================== */
+
+    /**
+     * Curve preset definitions.
+     * Each preset defines:
+     *   - id: unique slug used in state.flowPresetId
+     *   - name: display label
+     *   - easeType: "both" | "in" | "out" | "linear" | "hold" - maps to the JSX
+     *               interpolation type and direction
+     *   - influence: 0-100 default pull strength for bezier handles
+     *   - path: "M0 H C cx1 cy1 cx2 cy2 W 0" SVG d-attribute drawn inside the
+     *               card. Coordinates are 0..1 normalized; we scale at render.
+     *
+     * The SVG coordinate system used for the cards is (0,0) top-left =
+     * (0 seconds, 100% value) and (1,1) bottom-right = (1 second, 0% value),
+     * matching the JerryFlow visual reference.
+     */
+    var FLOW_PRESETS = [
+        { id: "easein-slow",     name: "EaseIn Slow",      easeType: "in",    influence: 30, path: "M0 1 C 0.1 1, 0.6 1, 1 0" },
+        { id: "easein-fast",     name: "EaseIn Fast",      easeType: "in",    influence: 85, path: "M0 1 C 0.5 1, 0.9 0.9, 1 0" },
+        { id: "easeout-slow",    name: "EaseOut Slow",     easeType: "out",   influence: 30, path: "M0 1 C 0.4 0, 0.9 0, 1 0" },
+        { id: "easeout-fast",    name: "EaseOut Fast",     easeType: "out",   influence: 85, path: "M0 1 C 0.1 0.1, 0.5 0, 1 0" },
+        { id: "easeinout-smooth",name: "EaseInOut Smooth", easeType: "both",  influence: 55, path: "M0 1 C 0.3 1, 0.7 0, 1 0" },
+
+        { id: "easein-linear",   name: "Linear In",        easeType: "in",    influence: 10, path: "M0 1 C 0.1 0.9, 0.8 0.2, 1 0" },
+        { id: "easein-bounce",   name: "EaseIn Bounce",    easeType: "in",    influence: 95, path: "M0 1 C 0.2 1.15, 0.9 1.0, 1 0" },
+        { id: "empty-1",         name: "",                 empty: true },
+        { id: "empty-2",         name: "",                 empty: true },
+        { id: "empty-3",         name: "",                 empty: true },
+
+        { id: "easeout-linear",  name: "Linear Out",       easeType: "out",   influence: 10, path: "M0 1 C 0.2 0.8, 0.9 0.1, 1 0" },
+        { id: "easeout-bounce",  name: "EaseOut Bounce",   easeType: "out",   influence: 95, path: "M0 1 C 0.1 -0.15, 0.8 0, 1 0" },
+        { id: "empty-4",         name: "",                 empty: true },
+        { id: "empty-5",         name: "",                 empty: true },
+        { id: "easeinout-sharp", name: "EaseInOut Sharp",  easeType: "both",  influence: 90, path: "M0 1 C 0.5 1, 0.5 0, 1 0" },
+
+        { id: "easeinout-soft",  name: "EaseInOut Soft",   easeType: "both",  influence: 25, path: "M0 1 C 0.3 0.75, 0.7 0.25, 1 0" },
+        { id: "easeinout-bounce",name: "EaseInOut Bounce", easeType: "both",  influence: 95, path: "M0 1 C 0.2 1.2, 0.8 -0.2, 1 0" },
+        { id: "empty-6",         name: "",                 empty: true },
+        { id: "empty-7",         name: "",                 empty: true },
+        { id: "easeinout-steep", name: "EaseInOut Steep",  easeType: "both",  influence: 75, path: "M0 1 C 0.15 1, 0.85 0, 1 0" },
+
+        { id: "hold",            name: "Hold",             easeType: "hold",  influence: 0,  path: "M0 1 L 0.5 1 L 0.5 0 L 1 0" },
+        { id: "ease-ramp",       name: "Ramp",             easeType: "both",  influence: 65, path: "M0 1 C 0.2 1, 0.5 0.5, 0.7 0.05 L 1 0" },
+        { id: "ease-wave",       name: "Wave",             easeType: "both",  influence: 80, path: "M0 1 C 0.2 0.2, 0.5 1.2, 1 0" },
+        { id: "ease-s-long",     name: "Long S",           easeType: "both",  influence: 40, path: "M0 1 C 0.4 1, 0.6 0, 1 0" },
+        { id: "linear",          name: "Linear",           easeType: "linear",influence: 0,  path: "M0 1 L 1 0" }
+    ];
+
+    /* ---------- Bind ---------- */
     function bindKeyframeFlow() {
+        bindFlowSidebar();
+        renderCurveGrid();
+        bindFlowPresetInitialSelection();
+
         var strength = $("#kf-strength");
         var strengthVal = $("#kf-strength-val");
         if (strength && strengthVal) {
@@ -852,14 +907,130 @@
         var resetBtn = $("#kf-reset");
         if (applyBtn) applyBtn.addEventListener("click", onApplyFlow);
         if (resetBtn) resetBtn.addEventListener("click", onResetFlow);
+
+        var refreshBtn = $("#kf-refresh-info");
+        var reloadBtn = $("#kf-reload-scripts");
+        if (refreshBtn) refreshBtn.addEventListener("click", refreshSequenceInfo);
+        if (reloadBtn) reloadBtn.addEventListener("click", reloadJsxScripts);
     }
 
-    function getFlowOpts() {
+    function bindFlowSidebar() {
+        var buttons = $$(".flow-side-btn");
+        var panels = $$(".flow-sub");
+        buttons.forEach(function (btn) {
+            btn.addEventListener("click", function () {
+                var name = btn.getAttribute("data-flow-side");
+                buttons.forEach(function (b) {
+                    b.classList.toggle("active", b === btn);
+                    b.setAttribute("aria-selected", (b === btn) ? "true" : "false");
+                });
+                panels.forEach(function (p) {
+                    var active = (p.getAttribute("data-flow-sub") === name);
+                    p.classList.toggle("active", active);
+                    p.hidden = !active;
+                });
+                if (name === "settings") refreshSequenceInfo();
+            });
+        });
+    }
+
+    function renderCurveGrid() {
+        var grid = $("#curve-grid");
+        if (!grid) return;
+        grid.innerHTML = "";
+        FLOW_PRESETS.forEach(function (preset) {
+            var card = document.createElement("button");
+            card.type = "button";
+            card.className = "curve-card" + (preset.empty ? " empty" : "");
+            card.setAttribute("data-flow-preset", preset.id);
+            if (!preset.empty) card.title = preset.name;
+
+            if (preset.empty) {
+                var plus = document.createElement("span");
+                plus.className = "plus";
+                plus.textContent = "+";
+                card.appendChild(plus);
+            } else {
+                card.innerHTML = buildCurveSvg(preset) +
+                    '<span class="curve-label">' + escapeHtml(preset.name) + '</span>';
+            }
+
+            card.addEventListener("click", function () {
+                if (preset.empty) {
+                    setStatus("Custom preset slots coming soon.", "ok");
+                    return;
+                }
+                selectFlowPreset(preset.id);
+            });
+            grid.appendChild(card);
+        });
+    }
+
+    function buildCurveSvg(preset) {
+        // Card SVG viewBox is 0..100 on both axes. We map normalized preset
+        // path coords (0..1) to 8..92 so there's padding around the curve.
+        var pad = 10, span = 100 - 2 * pad;
+        function mapPath(d) {
+            return d.replace(/(-?\d*\.?\d+)\s+(-?\d*\.?\d+)/g, function (_, x, y) {
+                return (pad + parseFloat(x) * span).toFixed(2) + " " +
+                       (pad + parseFloat(y) * span).toFixed(2);
+            });
+        }
+        var mapped = mapPath(preset.path);
+        // Endpoint circles (handles indicators).
+        return '<svg class="curve-svg" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet" aria-hidden="true">' +
+            '<defs><linearGradient id="g-' + preset.id + '" x1="0" y1="1" x2="1" y2="0">' +
+            '<stop offset="0" stop-color="#b388ff"/><stop offset="1" stop-color="#8b5cf6"/>' +
+            '</linearGradient></defs>' +
+            '<line x1="10" y1="90" x2="20" y2="90" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round"/>' +
+            '<line x1="80" y1="10" x2="90" y2="10" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round"/>' +
+            '<path d="' + mapped + '" fill="none" stroke="url(#g-' + preset.id + ')" stroke-width="3" stroke-linecap="round"/>' +
+            '<circle cx="' + (pad).toFixed(2) + '" cy="' + (pad + span).toFixed(2) + '" r="3.2" fill="#ffffff"/>' +
+            '<circle cx="' + (pad + span).toFixed(2) + '" cy="' + (pad).toFixed(2) + '" r="3.2" fill="#b388ff"/>' +
+            '</svg>';
+    }
+
+    function bindFlowPresetInitialSelection() {
+        selectFlowPreset("easeinout-smooth");
+    }
+
+    function selectFlowPreset(id) {
+        var preset = FLOW_PRESETS.find ? FLOW_PRESETS.find(function (p) { return p.id === id; }) :
+            (function () { for (var i = 0; i < FLOW_PRESETS.length; i++) if (FLOW_PRESETS[i].id === id) return FLOW_PRESETS[i]; return null; })();
+        if (!preset || preset.empty) return;
+        state.flowPresetId = id;
+        state.flowPreset = preset;
+        $$(".curve-card").forEach(function (c) {
+            c.classList.toggle("active", c.getAttribute("data-flow-preset") === id);
+        });
+        var nameEl = $("#kf-preset-name");
+        if (nameEl) nameEl.textContent = preset.name;
+        var strength = $("#kf-strength");
+        var strengthVal = $("#kf-strength-val");
+        if (strength && preset.influence != null) {
+            strength.value = String(preset.influence);
+            if (strengthVal) strengthVal.textContent = String(preset.influence);
+        }
+    }
+
+    function escapeHtml(s) {
+        return String(s).replace(/[&<>"']/g, function (c) {
+            return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+        });
+    }
+
+    /* ---------- Apply / Reset ---------- */
+    function getFlowOpts(easeOverride) {
         var props = $$('input[name="kf-prop"]:checked').map(function (el) { return el.value; });
+        var preset = state.flowPreset || FLOW_PRESETS[4];
+        var easeType = easeOverride || preset.easeType || "both";
+        // "hold" maps to linear on the JSX side (true step hold is a separate
+        // feature in Premiere's keyframe model).
+        if (easeType === "hold") easeType = "linear";
         return {
             properties: props,
-            easeType: (document.querySelector('input[name="kf-ease"]:checked') || {}).value || "both",
-            influence: parseInt($("#kf-strength").value, 10) || 50,
+            easeType: easeType,
+            influence: parseInt($("#kf-strength").value, 10) || (preset.influence || 50),
             scope: (document.querySelector('input[name="kf-scope"]:checked') || {}).value || "selected"
         };
     }
@@ -871,7 +1042,7 @@
             return;
         }
         setStatus("Applying flow to keyframes...", "busy");
-        jsx("KeyframeFlow.apply(" + arg(opts) + ");").then(function (res) {
+        jsx("applyFlow(" + arg(opts) + ");").then(function (res) {
             if (!res || !res.ok) {
                 setStatus((res && res.error) || "Apply flow failed.", "error");
                 return;
@@ -883,13 +1054,13 @@
     }
 
     function onResetFlow() {
-        var opts = getFlowOpts();
+        var opts = getFlowOpts("linear");
         if (!opts.properties.length) {
             setStatus("Pick at least one property.", "error");
             return;
         }
         setStatus("Resetting keyframes to linear...", "busy");
-        jsx("KeyframeFlow.reset(" + arg(opts) + ");").then(function (res) {
+        jsx("resetFlow(" + arg(opts) + ");").then(function (res) {
             if (!res || !res.ok) {
                 setStatus((res && res.error) || "Reset failed.", "error");
                 return;
@@ -909,6 +1080,57 @@
             + " (" + (easeType || "linear") + ").";
         info.textContent = msg;
         info.classList.toggle("has-data", (res.keyframes || 0) > 0);
+    }
+
+    /* ---------- Settings: sequence info + Reload Scripts ---------- */
+    function refreshSequenceInfo() {
+        var nameEl = $("#kf-seq-name");
+        var fpsEl = $("#kf-seq-fps");
+        var durEl = $("#kf-seq-dur");
+        var tbEl = $("#kf-seq-timebase");
+        if (!nameEl) return;
+        jsx("getActiveSequenceInfo();").then(function (res) {
+            if (!res || !res.ok) {
+                nameEl.textContent = "-";
+                fpsEl.textContent = "-";
+                durEl.textContent = "-";
+                tbEl.textContent = "-";
+                return;
+            }
+            nameEl.textContent = res.name || "-";
+            fpsEl.textContent = res.fps ? res.fps.toFixed(3) : "-";
+            durEl.textContent = res.endSeconds ? res.endSeconds.toFixed(2) + "s" : "-";
+            tbEl.textContent = res.timebase ? String(res.timebase) : "-";
+        });
+    }
+
+    function reloadJsxScripts() {
+        var info = $("#kf-reload-info");
+        if (info) info.textContent = "Reloading...";
+        setStatus("Reloading scripts...", "busy");
+        var ext = cs.getSystemPath ? cs.getSystemPath(SystemPath.EXTENSION) : "";
+        var path = (ext || "").replace(/\\/g, "/");
+        // Two-step: re-evaluate hostscript.jsx first (which re-includes the
+        // feature files), then call reloadScripts() to verify everything is
+        // present and surface any errors.
+        var head = '$.evalFile("' + path + '/jsx/hostscript.jsx")';
+        jsx(head + "; reloadScripts(" + JSON.stringify(path) + ");").then(function (res) {
+            var text;
+            if (!res || !res.ok) {
+                text = "Reload failed: " + ((res && res.errors) ? res.errors.join(" | ") : ((res && res.error) || "unknown"));
+                if (info) info.textContent = text;
+                setStatus(text, "error");
+                return;
+            }
+            var have = res.have || {};
+            var missing = Object.keys(have).filter(function (k) { return !have[k]; });
+            text = "Reloaded " + (res.loaded || []).length + " file"
+                + ((res.loaded || []).length === 1 ? "" : "s")
+                + " in " + (res.elapsedMs || 0) + "ms.";
+            if (missing.length) text += " Missing: " + missing.join(", ");
+            if (info) info.textContent = text;
+            setStatus(text, missing.length ? "error" : "ok");
+        });
     }
 
     function bindCreditLink() {

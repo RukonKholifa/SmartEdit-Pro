@@ -167,85 +167,101 @@
             </div>
         </section>
 
-        <!-- ============== TAB 3: KEYFRAME FLOW ============== -->
-        <section class="card tab-panel" id="section-flow" data-tab-panel="flow" role="tabpanel" hidden>
-            <div class="card-header">
-                <h2 class="card-title">Keyframe Flow</h2>
-                <span class="card-tag">Smooth &rarr; Ease</span>
-            </div>
+        <!-- ============== TAB 3: KEYFRAME FLOW (JerryFlow-style) ============== -->
+        <section class="card tab-panel flow-panel" id="section-flow" data-tab-panel="flow" role="tabpanel" hidden>
+            <div class="flow-layout">
+                <!-- Vertical left rail with 4 sub-sections -->
+                <nav class="flow-sidebar" role="tablist" aria-label="Keyframe Flow sections">
+                    <button class="flow-side-btn active" data-flow-side="curves" role="tab" title="Curve preset library">
+                        <svg viewBox="0 0 32 32" class="flow-side-ic" aria-hidden="true"><path d="M4 26 C 4 8, 14 8, 16 16 S 28 24, 28 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><circle cx="4" cy="26" r="2.4" fill="currentColor"/><circle cx="28" cy="6" r="2.4" fill="currentColor"/></svg>
+                        <span>Curves</span>
+                    </button>
+                    <button class="flow-side-btn" data-flow-side="main" role="tab" title="Main controls">
+                        <svg viewBox="0 0 32 32" class="flow-side-ic" aria-hidden="true"><path d="M16 4 V 28 M4 16 H 28 M16 4 L 12 8 M16 4 L 20 8 M16 28 L 12 24 M16 28 L 20 24 M4 16 L 8 12 M4 16 L 8 20 M28 16 L 24 12 M28 16 L 24 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                        <span>Main</span>
+                    </button>
+                    <button class="flow-side-btn" data-flow-side="effects" role="tab" title="Effects (coming soon)">
+                        <svg viewBox="0 0 32 32" class="flow-side-ic" aria-hidden="true"><circle cx="16" cy="16" r="6" fill="none" stroke="currentColor" stroke-width="2"/><path d="M16 3 V 7 M16 25 V 29 M3 16 H 7 M25 16 H 29 M6.5 6.5 L 9.5 9.5 M22.5 22.5 L 25.5 25.5 M6.5 25.5 L 9.5 22.5 M22.5 9.5 L 25.5 6.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                        <span>Effects</span>
+                    </button>
+                    <button class="flow-side-btn" data-flow-side="settings" role="tab" title="Settings and script reload">
+                        <svg viewBox="0 0 32 32" class="flow-side-ic" aria-hidden="true"><circle cx="16" cy="16" r="3.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M16 3 V 7 M16 25 V 29 M3 16 H 7 M25 16 H 29 M6.5 6.5 L 9.5 9.5 M22.5 22.5 L 25.5 25.5 M6.5 25.5 L 9.5 22.5 M22.5 9.5 L 25.5 6.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                        <span>Settings</span>
+                    </button>
+                </nav>
 
-            <div class="card-body">
-                <div class="row">
-                    <span class="label" title="Properties whose keyframes will be eased">Properties</span>
-                    <div class="check-grid">
-                        <label class="check">
-                            <input type="checkbox" name="kf-prop" value="Opacity" checked>
-                            <span>Opacity</span>
-                        </label>
-                        <label class="check">
-                            <input type="checkbox" name="kf-prop" value="Scale">
-                            <span>Scale</span>
-                        </label>
-                        <label class="check">
-                            <input type="checkbox" name="kf-prop" value="Position">
-                            <span>Position</span>
-                        </label>
-                        <label class="check">
-                            <input type="checkbox" name="kf-prop" value="Rotation">
-                            <span>Rotation</span>
-                        </label>
+                <!-- Right content area -->
+                <div class="flow-main">
+                    <!-- CURVES sub-panel -->
+                    <div class="flow-sub active" data-flow-sub="curves">
+                        <div class="flow-sub-title">Curves Presets</div>
+                        <div class="curve-grid" id="curve-grid"></div>
                     </div>
-                </div>
 
-                <div class="row">
-                    <span class="label" title="Which side(s) of each keyframe should be eased">Ease Type</span>
-                    <div class="radio-group stack">
-                        <label class="radio">
-                            <input type="radio" name="kf-ease" value="both" checked>
-                            <span>Ease In &amp; Out</span>
-                        </label>
-                        <label class="radio">
-                            <input type="radio" name="kf-ease" value="in">
-                            <span>Ease In Only</span>
-                        </label>
-                        <label class="radio">
-                            <input type="radio" name="kf-ease" value="out">
-                            <span>Ease Out Only</span>
-                        </label>
-                        <label class="radio">
-                            <input type="radio" name="kf-ease" value="linear">
-                            <span>Linear (reset)</span>
-                        </label>
+                    <!-- MAIN sub-panel -->
+                    <div class="flow-sub" data-flow-sub="main" hidden>
+                        <div class="flow-sub-title">Main</div>
+                        <div class="row">
+                            <span class="label" title="Properties whose keyframes will be eased">Properties</span>
+                            <div class="check-grid">
+                                <label class="check"><input type="checkbox" name="kf-prop" value="Opacity" checked><span>Opacity</span></label>
+                                <label class="check"><input type="checkbox" name="kf-prop" value="Scale"><span>Scale</span></label>
+                                <label class="check"><input type="checkbox" name="kf-prop" value="Position"><span>Position</span></label>
+                                <label class="check"><input type="checkbox" name="kf-prop" value="Rotation"><span>Rotation</span></label>
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <span class="label" title="Which clips should be affected">Apply To</span>
+                            <div class="radio-group">
+                                <label class="radio"><input type="radio" name="kf-scope" value="selected" checked><span>Selected Clip Only</span></label>
+                                <label class="radio"><input type="radio" name="kf-scope" value="v1all"><span>All Clips on V1</span></label>
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <label class="label" for="kf-strength" title="Bezier handle strength (0=linear, 100=maximum curve)">Ease Influence</label>
+                            <div class="inline">
+                                <input type="range" id="kf-strength" class="slider" min="0" max="100" value="50">
+                                <span class="value-pill" id="kf-strength-val">50</span>
+                            </div>
+                        </div>
+
+                        <div class="info-box" id="kf-info">Pick a curve, then Apply Flow.</div>
+                        <div class="selected-curve-row">
+                            Selected curve: <span class="selected-curve-name" id="kf-preset-name">EaseInOut-Smooth</span>
+                        </div>
+
+                        <div class="button-stack">
+                            <button class="btn primary full" id="kf-apply" title="Apply the selected curve to matching keyframes">Apply Flow</button>
+                            <button class="btn outline full" id="kf-reset" title="Reset all matching keyframes to linear interpolation">Reset to Linear</button>
+                        </div>
                     </div>
-                </div>
 
-                <div class="row">
-                    <label class="label" for="kf-strength" title="How strong the bezier handle pull is (0 = almost linear, 100 = maximum curve)">Influence %</label>
-                    <div class="inline">
-                        <input type="range" id="kf-strength" class="slider" min="0" max="100" value="50">
-                        <span class="value-pill" id="kf-strength-val">50</span>
+                    <!-- EFFECTS sub-panel -->
+                    <div class="flow-sub" data-flow-sub="effects" hidden>
+                        <div class="flow-sub-title">Effects</div>
+                        <div class="coming-soon">
+                            <svg viewBox="0 0 64 64" class="coming-soon-ic" aria-hidden="true"><circle cx="32" cy="32" r="20" fill="none" stroke="currentColor" stroke-width="3"/><path d="M32 20 V 32 L 40 36" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>
+                            <div class="coming-soon-text">Coming soon</div>
+                            <div class="coming-soon-sub">Per-clip effect stacks with shareable presets.</div>
+                        </div>
                     </div>
-                </div>
 
-                <div class="row">
-                    <span class="label" title="Which clips should be affected">Apply To</span>
-                    <div class="radio-group">
-                        <label class="radio">
-                            <input type="radio" name="kf-scope" value="selected" checked>
-                            <span>Selected Clip Only</span>
-                        </label>
-                        <label class="radio">
-                            <input type="radio" name="kf-scope" value="v1all">
-                            <span>All Clips on V1</span>
-                        </label>
+                    <!-- SETTINGS sub-panel -->
+                    <div class="flow-sub" data-flow-sub="settings" hidden>
+                        <div class="flow-sub-title">Settings</div>
+                        <div class="kv-row"><span class="kv-k">Sequence</span><span class="kv-v" id="kf-seq-name">-</span></div>
+                        <div class="kv-row"><span class="kv-k">Frame rate (FPS)</span><span class="kv-v" id="kf-seq-fps">-</span></div>
+                        <div class="kv-row"><span class="kv-k">Duration</span><span class="kv-v" id="kf-seq-dur">-</span></div>
+                        <div class="kv-row"><span class="kv-k">Timebase (ticks/frame)</span><span class="kv-v" id="kf-seq-timebase">-</span></div>
+
+                        <div class="button-stack" style="margin-top:12px;">
+                            <button class="btn outline full" id="kf-refresh-info" title="Re-read the active sequence info">Refresh</button>
+                            <button class="btn accent full" id="kf-reload-scripts" title="Re-evaluate all ExtendScript files (no Premiere restart)">Reload Scripts</button>
+                        </div>
+                        <div class="info-box" id="kf-reload-info" style="margin-top:8px;">Scripts: not yet checked.</div>
                     </div>
-                </div>
-
-                <div class="info-box" id="kf-info">No keyframes processed yet.</div>
-
-                <div class="button-stack">
-                    <button class="btn primary full" id="kf-apply" title="Apply the selected flow curve to matching keyframes">Apply Flow</button>
-                    <button class="btn outline full" id="kf-reset" title="Reset all matching keyframes to linear interpolation">Reset to Linear</button>
                 </div>
             </div>
         </section>
