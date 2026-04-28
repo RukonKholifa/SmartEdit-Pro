@@ -175,6 +175,19 @@ var PodcastSwitch = (function () {
         }
     }
 
+    /**
+     * Two-phase apply:
+     *   Phase 1 - razor every camera track at every segment boundary so each
+     *             segment lives in its own clip per track.
+     *   Phase 2 - for every segment, walk every camera track and mute/disable
+     *             the clip(s) that fall inside the segment but belong to a
+     *             non-active speaker. Active speaker's clip is explicitly
+     *             enabled so re-runs are idempotent.
+     *   Phase 3 - same pass on mic tracks: mute non-active speaker mics so
+     *             the audio matches the visible camera.
+     *
+     * Nothing is deleted - this whole flow can be reverted with app.undo().
+     */
     function applyEdit(payloadJson) {
         var seq = SmartEditPro.getActiveSequence();
         if (!seq) return SmartEditPro.error("No active sequence.");
@@ -182,74 +195,128 @@ var PodcastSwitch = (function () {
         var edl = payload.edl || [];
         var opts = payload.options || {};
         if (!edl.length) return SmartEditPro.error("No EDL to apply.");
+        if (!opts.speakers || !opts.speakers.length) {
+            return SmartEditPro.error("Speaker configuration missing.");
+        }
 
         var bufferFrames = Math.max(0, opts.bufferFrames || 0);
         var fps = 30;
         try {
-            // sequence.timebase is ticks per frame; tick rate / timebase = fps.
-            if (seq.timebase) {
-                fps = SmartEditPro.TICKS_PER_SECOND / Number(seq.timebase);
-            }
+            if (seq.timebase) fps = SmartEditPro.TICKS_PER_SECOND / Number(seq.timebase);
         } catch (eFps) {}
         var bufferSec = bufferFrames / fps;
 
+        // Collect the set of camera + mic track indices we care about.
+        var camTrackIdxs = {};
+        var micTrackIdxs = {};
+        for (var s = 0; s < opts.speakers.length; s++) {
+            var sp = opts.speakers[s];
+            if (typeof sp.camTrackIndex === "number" && sp.camTrackIndex >= 0) camTrackIdxs[sp.camTrackIndex] = true;
+            if (typeof sp.micTrackIndex === "number" && sp.micTrackIndex >= 0) micTrackIdxs[sp.micTrackIndex] = true;
+        }
+
+        // Phase 1: razor at every segment boundary (start AND end so the last
+        // segment is also bounded), with optional buffer-frame lead-in.
+        var boundaries = {};
+        for (var i = 0; i < edl.length; i++) {
+            var b1 = Math.max(0, edl[i].start - bufferSec);
+            var b2 = Math.max(0, edl[i].end - bufferSec);
+            if (b1 > 0) boundaries[+b1.toFixed(6)] = true;
+            if (b2 > 0) boundaries[+b2.toFixed(6)] = true;
+        }
+        var cutTimes = [];
+        for (var k in boundaries) { if (boundaries.hasOwnProperty(k)) cutTimes.push(Number(k)); }
+        cutTimes.sort(function (a, b) { return a - b; });
+
         var cuts = 0;
         try {
-            // 1. Razor the timeline at every segment boundary.
-            for (var i = 0; i < edl.length; i++) {
-                var t = Math.max(0, edl[i].start - bufferSec);
-                if (i === 0) continue; // no cut at t=0
+            for (var ci = 0; ci < cutTimes.length; ci++) {
                 if (typeof seq.razor === "function") {
-                    seq.razor(SmartEditPro.secondsToTicks(t));
+                    seq.razor(SmartEditPro.secondsToTicks(cutTimes[ci]));
                     cuts++;
                 }
             }
+        } catch (eRazor) {
+            return SmartEditPro.error("Razor pass failed: " + eRazor);
+        }
 
-            // 2. Toggle camera track visibility per segment.
-            //    For each segment, enable the active speaker's camera track
-            //    and disable the others. We do this by setting clip.disabled.
-            for (var s = 0; s < edl.length; s++) {
-                var seg = edl[s];
-                if (seg.speakerIdx < 0) continue;
-                var activeCam = opts.speakers[seg.speakerIdx]
-                    ? opts.speakers[seg.speakerIdx].camTrackIndex
-                    : -1;
-                if (activeCam < 0) continue;
-                toggleCamerasFor(seq, seg, activeCam, opts.speakers);
+        // Phase 2 + 3: per-segment, set disabled/mute on the clips that fall
+        // inside the segment for every camera + mic track in our set.
+        try {
+            for (var si = 0; si < edl.length; si++) {
+                var seg = edl[si];
+                if (typeof seg.start !== "number" || typeof seg.end !== "number") continue;
+
+                var activeCam = (seg.speakerIdx >= 0 && opts.speakers[seg.speakerIdx])
+                    ? opts.speakers[seg.speakerIdx].camTrackIndex : -1;
+                var activeMic = (seg.speakerIdx >= 0 && opts.speakers[seg.speakerIdx])
+                    ? opts.speakers[seg.speakerIdx].micTrackIndex : -1;
+
+                applyToTrackSet(seq.videoTracks, camTrackIdxs, seg, activeCam, "disable");
+                applyToTrackSet(seq.audioTracks, micTrackIdxs, seg, activeMic, "mute");
             }
         } catch (e) {
             return SmartEditPro.error("Apply edit failed: " + e);
         }
 
-        return SmartEditPro.respond({ ok: true, cuts: cuts });
+        return SmartEditPro.respond({
+            ok: true,
+            cuts: cuts,
+            segments: edl.length
+        });
     }
 
-    function toggleCamerasFor(seq, seg, activeCam, speakers) {
-        if (!seq.videoTracks) return;
-        var camTracks = {};
-        for (var s = 0; s < speakers.length; s++) {
-            var idx = speakers[s].camTrackIndex;
-            if (typeof idx === "number" && idx >= 0) camTracks[idx] = true;
-        }
-        camTracks[activeCam] = true; // ensure the active one is in the set
-
-        for (var t in camTracks) {
-            if (!camTracks.hasOwnProperty(t)) continue;
+    /**
+     * For each track in `trackSet`, find clips whose midpoint falls inside the
+     * segment and either disable (video) or mute (audio) them based on whether
+     * the track index matches the active speaker's track.
+     */
+    function applyToTrackSet(trackContainer, trackSet, seg, activeIdx, action) {
+        if (!trackContainer || !trackContainer.numTracks) return;
+        for (var t in trackSet) {
+            if (!trackSet.hasOwnProperty(t)) continue;
             var trackIdx = parseInt(t, 10);
-            var track = (seq.videoTracks.numTracks > trackIdx) ? seq.videoTracks[trackIdx] : null;
+            if (trackIdx >= trackContainer.numTracks) continue;
+            var track = trackContainer[trackIdx];
             if (!track || !track.clips) continue;
             var clips = track.clips;
+            var isActive = (trackIdx === activeIdx);
+
             for (var c = 0; c < clips.numItems; c++) {
                 var clip = clips[c];
                 if (!clip) continue;
-                var clipStart = (clip.start && clip.start.seconds) ? clip.start.seconds : 0;
-                var clipEnd = (clip.end && clip.end.seconds) ? clip.end.seconds : clipStart;
-                if (clipEnd <= seg.start || clipStart >= seg.end) continue;
+                var clipStart = clipSeconds(clip, "start");
+                var clipEnd = clipSeconds(clip, "end");
+                if (clipEnd <= clipStart) continue;
+                // Use midpoint match - razor already split clips at segment
+                // boundaries, so each clip is fully inside one segment.
+                var mid = (clipStart + clipEnd) / 2;
+                if (mid < seg.start - 1e-4 || mid > seg.end + 1e-4) continue;
                 try {
-                    clip.disabled = (trackIdx !== activeCam);
-                } catch (eD) {}
+                    if (action === "disable") {
+                        clip.disabled = !isActive;
+                    } else if (action === "mute") {
+                        if (typeof clip.setMute === "function") {
+                            clip.setMute(!isActive);
+                        } else {
+                            // Fallback: disable if the host doesn't expose setMute.
+                            try { clip.disabled = !isActive; } catch (eD) {}
+                        }
+                    }
+                } catch (eToggle) {}
             }
         }
+    }
+
+    function clipSeconds(clip, which) {
+        try {
+            var t = clip[which];
+            if (!t) return 0;
+            if (typeof t === "number") return t;
+            if (typeof t.seconds === "number") return t.seconds;
+            if (t.ticks) return Number(t.ticks) / SmartEditPro.TICKS_PER_SECOND;
+        } catch (e) {}
+        return 0;
     }
 
     return {

@@ -53,6 +53,43 @@ html, body {
     background: var(--panel-2);
     flex: 0 0 auto;
 }
+
+/* ----- tab nav ----- */
+.tab-nav {
+    display: flex;
+    gap: 0;
+    background: var(--panel-2);
+    border-bottom: 1px solid var(--border);
+    flex: 0 0 auto;
+    padding: 0 10px;
+}
+.tab-btn {
+    flex: 1;
+    padding: 10px 12px;
+    background: transparent;
+    color: var(--text-dim);
+    border: none;
+    border-bottom: 2px solid transparent;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: color 0.12s, border-color 0.12s, background 0.12s;
+}
+.tab-btn:hover {
+    color: var(--text);
+    background: var(--panel-hover);
+}
+.tab-btn.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+}
+
+/* ----- tab panels ----- */
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
 .brand {
     display: flex; align-items: center; gap: 8px;
 }

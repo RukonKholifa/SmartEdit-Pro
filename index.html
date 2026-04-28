@@ -16,8 +16,13 @@
             <span class="brand-version">v1.0.0</span>
         </header>
 
-        <!-- ============== SECTION 1: BEAT SYNC CUTTER ============== -->
-        <section class="card" id="section-beat">
+        <nav class="tab-nav" role="tablist">
+            <button class="tab-btn active" data-tab="beat" role="tab" aria-selected="true">Beat Sync</button>
+            <button class="tab-btn" data-tab="podcast" role="tab" aria-selected="false">Podcast</button>
+        </nav>
+
+        <!-- ============== TAB 1: BEAT SYNC CUTTER ============== -->
+        <section class="card tab-panel active" id="section-beat" data-tab-panel="beat" role="tabpanel">
             <div class="card-header">
                 <h2 class="card-title">Beat Sync Cutter</h2>
                 <span class="card-tag">Music &rarr; Cuts</span>
@@ -37,17 +42,34 @@
                     </select>
                 </div>
 
-                <div class="row two-col">
-                    <div>
-                        <label class="label" for="bs-interval" title="Place a cut every N beats (1 = every beat)">Cut every N beats</label>
-                        <div class="inline">
-                            <input type="number" id="bs-interval" class="control compact" min="1" max="8" value="1">
-                            <input type="range" id="bs-interval-slider" class="slider" min="1" max="8" value="1">
-                        </div>
+                <div class="row">
+                    <span class="label" title="Cut at detected musical beats, or at fixed frame intervals">Frame Interval Mode</span>
+                    <div class="radio-group">
+                        <label class="radio">
+                            <input type="radio" name="bs-mode" value="beat" checked>
+                            <span>Beat Based</span>
+                        </label>
+                        <label class="radio">
+                            <input type="radio" name="bs-mode" value="frames">
+                            <span>Fixed Frames</span>
+                        </label>
                     </div>
                 </div>
 
-                <div class="row">
+                <div class="row mode-beat">
+                    <label class="label" for="bs-interval" title="Place a cut every N beats (1 = every beat)">Cut every N beats</label>
+                    <div class="inline">
+                        <input type="number" id="bs-interval" class="control compact" min="1" max="8" value="1">
+                        <input type="range" id="bs-interval-slider" class="slider" min="1" max="8" value="1">
+                    </div>
+                </div>
+
+                <div class="row mode-frames" hidden>
+                    <label class="label" for="bs-frames" title="Cut every N frames across the chosen range (e.g. 5, 10, 24)">Cut every N frames</label>
+                    <input type="number" id="bs-frames" class="control" min="1" step="1" value="24">
+                </div>
+
+                <div class="row mode-beat">
                     <label class="label" for="bs-sensitivity" title="Low = only strong transients, High = soft beats too">Beat Sensitivity</label>
                     <div class="inline">
                         <input type="range" id="bs-sensitivity" class="slider" min="1" max="100" value="50">
@@ -55,7 +77,7 @@
                     </div>
                 </div>
 
-                <div class="row">
+                <div class="row mode-beat">
                     <label class="label" for="bs-threshold" title="Beats below this audio level are ignored">Min Audio Level (dB)</label>
                     <input type="number" id="bs-threshold" class="control" min="-60" max="0" step="1" value="-30">
                 </div>
@@ -74,19 +96,19 @@
                     </div>
                 </div>
 
-                <div class="info-box" id="bs-info">No beats detected yet.</div>
+                <div class="info-box" id="bs-info">No cut points generated yet.</div>
 
                 <div class="button-grid">
-                    <button class="btn primary" id="bs-detect" title="Analyze the music track and detect beats">Detect Beats</button>
-                    <button class="btn" id="bs-preview" title="Place temporary timeline markers at every detected beat">Preview Markers</button>
-                    <button class="btn accent" id="bs-apply" title="Razor-cut the target clip(s) at every detected beat">Apply Cuts</button>
-                    <button class="btn ghost" id="bs-clear" title="Remove preview markers from the timeline">Clear Markers</button>
+                    <button class="btn primary" id="bs-detect" title="Analyze the music track and detect beats (Beat Based mode only)">Detect Beats</button>
+                    <button class="btn" id="bs-preview" title="Place markers only — does not cut">Preview Markers</button>
+                    <button class="btn accent" id="bs-apply" title="Razor-cut only — does not place markers">Apply Cuts</button>
+                    <button class="btn ghost" id="bs-clear" title="Remove SmartEdit preview markers from the timeline">Clear Markers</button>
                 </div>
             </div>
         </section>
 
-        <!-- ============== SECTION 2: PODCAST SMART SWITCHER ============== -->
-        <section class="card" id="section-podcast">
+        <!-- ============== TAB 2: PODCAST SMART SWITCHER ============== -->
+        <section class="card tab-panel" id="section-podcast" data-tab-panel="podcast" role="tabpanel" hidden>
             <div class="card-header">
                 <h2 class="card-title">Podcast Smart Switcher</h2>
                 <span class="card-tag">Multi-mic &rarr; Multi-cam</span>

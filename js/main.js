@@ -66,8 +66,11 @@
 
     /* ---------- state ---------- */
     var state = {
-        beats: [],            // array of seconds
-        podcastEdl: [],       // array of {start, end, speakerIdx}
+        cutTimes: [],          // array of seconds (beat or frame mode result)
+        cutSource: null,       // "beats" | "frames"
+        durationSeconds: 0,
+        podcastEdl: [],        // array of {start, end, speakerIdx}
+        podcastDuration: 0,
         speakerCount: 2,
         speakers: [],
         audioTracks: [],
@@ -237,37 +240,94 @@
         var sensVal = $("#bs-sensitivity-val");
         sens.addEventListener("input", function () { sensVal.textContent = sens.value; });
 
+        $$('input[name="bs-mode"]').forEach(function (radio) {
+            radio.addEventListener("change", refreshBeatModeUI);
+        });
+        refreshBeatModeUI();
+
         $("#bs-detect").addEventListener("click", onDetectBeats);
         $("#bs-preview").addEventListener("click", onPreviewMarkers);
         $("#bs-apply").addEventListener("click", onApplyCuts);
         $("#bs-clear").addEventListener("click", onClearMarkers);
     }
 
+    function getBeatMode() {
+        var checked = document.querySelector('input[name="bs-mode"]:checked');
+        return checked ? checked.value : "beat";
+    }
+
+    function refreshBeatModeUI() {
+        var mode = getBeatMode();
+        $$("#section-beat .mode-beat").forEach(function (el) {
+            el.hidden = (mode !== "beat");
+        });
+        $$("#section-beat .mode-frames").forEach(function (el) {
+            el.hidden = (mode !== "frames");
+        });
+        $("#bs-detect").disabled = (mode === "frames");
+        $("#bs-detect").title = (mode === "frames")
+            ? "Disabled in Fixed Frames mode \u2014 cuts are computed at fixed intervals"
+            : "Analyze the music track and detect beats";
+    }
+
     function getBeatSyncOpts() {
         return {
+            mode: getBeatMode(),
             musicTrackIndex: parseInt($("#bs-music-track").value, 10) || 0,
             target: $("#bs-target-mode").value,
             interval: Math.max(1, parseInt($("#bs-interval").value, 10) || 1),
+            framesEvery: Math.max(1, parseInt($("#bs-frames").value, 10) || 24),
             sensitivity: parseInt($("#bs-sensitivity").value, 10) || 50,
             dbThreshold: parseInt($("#bs-threshold").value, 10) || -30,
             range: (document.querySelector('input[name="bs-range"]:checked') || {}).value || "full"
         };
     }
 
-    function onDetectBeats() {
-        var opts = getBeatSyncOpts();
-        setStatus("Exporting audio for analysis...", "busy");
-        $("#bs-detect").disabled = true;
+    /**
+     * Resolve cut points for the current Beat Sync configuration.
+     * Returns a Promise that resolves to {times: number[], source: "beats"|"frames", durationSeconds: number}.
+     * - In "frames" mode this skips beat detection and asks the host for the
+     *   target range, then generates evenly spaced cut points every N frames.
+     * - In "beat" mode it returns cached beats if available, otherwise it runs
+     *   detection (so Preview / Apply work without an explicit Detect click).
+     */
+    function resolveCutTimes(opts, force) {
+        if (opts.mode === "frames") {
+            return computeFrameCuts(opts);
+        }
+        if (!force && state.cutSource === "beats" && state.cutTimes.length) {
+            return Promise.resolve({
+                times: state.cutTimes.slice(),
+                source: "beats",
+                durationSeconds: state.durationSeconds
+            });
+        }
+        return runBeatDetection(opts);
+    }
 
-        jsx("BeatSync.exportTrackAudio(" + arg(opts) + ");").then(function (res) {
-            if (!res.ok) {
-                setStatus(res.error || "Could not export audio. Falling back to estimate.", "error");
-                useSimulatedBeats(opts);
-                return;
+    function computeFrameCuts(opts) {
+        return jsx("BeatSync.getCutRange(" + arg(opts) + ");").then(function (info) {
+            var startSec = (info && typeof info.start === "number") ? info.start : 0;
+            var endSec   = (info && typeof info.end   === "number") ? info.end   : 60;
+            var fps      = (info && typeof info.fps   === "number" && info.fps > 0) ? info.fps : 30;
+            if (!info || !info.ok) {
+                // Soft fallback so the UI still produces output.
+                startSec = 0; endSec = 60; fps = 30;
             }
-            // res.path = absolute path to a wav file the JSX wrote.
-            // res.duration = sequence/clip duration in seconds.
-            setStatus("Analyzing audio for beats...", "busy");
+            var step = opts.framesEvery / fps;
+            var times = [];
+            for (var t = startSec + step; t < endSec; t += step) {
+                times.push(+t.toFixed(4));
+            }
+            return { times: times, source: "frames", durationSeconds: endSec - startSec };
+        });
+    }
+
+    function runBeatDetection(opts) {
+        return jsx("BeatSync.exportTrackAudio(" + arg(opts) + ");").then(function (res) {
+            if (!res || !res.ok) {
+                return useSimulatedBeats(opts);
+            }
             return decodeFromPath(res.path).then(function (buffer) {
                 return SmartBeatDetector.detectBeats(buffer, {
                     sensitivity: opts.sensitivity,
@@ -275,14 +335,25 @@
                     interval: opts.interval
                 });
             }).then(function (result) {
-                applyBeatResult(result);
-            }).catch(function (err) {
-                setStatus("Audio decode failed: " + (err && err.message ? err.message : err), "error");
-                useSimulatedBeats(opts);
+                return { times: result.beats || [], source: "beats", durationSeconds: result.durationSeconds || 0 };
+            }).catch(function () {
+                return useSimulatedBeats(opts);
             });
-        }).catch(function (err) {
-            setStatus("Beat detection failed: " + err, "error");
-            useSimulatedBeats(opts);
+        }).catch(function () {
+            return useSimulatedBeats(opts);
+        });
+    }
+
+    function onDetectBeats() {
+        var opts = getBeatSyncOpts();
+        if (opts.mode === "frames") {
+            setStatus("Switch to Beat Based mode to detect beats.", "error");
+            return;
+        }
+        setStatus("Exporting audio for analysis...", "busy");
+        $("#bs-detect").disabled = true;
+        runBeatDetection(opts).then(function (result) {
+            applyCutResult(result);
         }).then(function () {
             $("#bs-detect").disabled = false;
         });
@@ -310,52 +381,72 @@
         return jsx("BeatSync.getSequenceDuration();").then(function (info) {
             var duration = (info && info.ok && info.duration) ? info.duration : 60;
             var sim = SmartBeatDetector.simulateBeats(duration, opts);
-            applyBeatResult(sim);
             setStatus("Used estimated beat grid (no real audio decode).", "ok");
+            return { times: sim.beats || [], source: "beats", durationSeconds: sim.durationSeconds || duration };
         });
     }
 
-    function applyBeatResult(result) {
-        state.beats = result.beats || [];
+    function applyCutResult(result) {
+        state.cutTimes = result.times || [];
+        state.cutSource = result.source;
+        state.durationSeconds = result.durationSeconds || 0;
         var info = $("#bs-info");
-        info.textContent = "Detected " + state.beats.length + " beat" + (state.beats.length === 1 ? "" : "s")
-            + " over " + (result.durationSeconds ? result.durationSeconds.toFixed(2) : "?") + "s.";
-        info.classList.toggle("has-data", state.beats.length > 0);
-        if (!state.beats.length) {
-            setStatus("No beats found. Try increasing sensitivity.", "error");
+        var label = (result.source === "frames") ? "frame interval" : "beat";
+        var n = state.cutTimes.length;
+        info.textContent = "Generated " + n + " " + label + " cut" + (n === 1 ? "" : "s")
+            + " over " + (state.durationSeconds ? state.durationSeconds.toFixed(2) : "?") + "s.";
+        info.classList.toggle("has-data", n > 0);
+        if (!n) {
+            setStatus("No cut points produced. Adjust settings and try again.", "error");
+        } else if (result.source === "beats") {
+            setStatus("Detected " + n + " beats.", "ok");
         } else {
-            setStatus("Detected " + state.beats.length + " beats.", "ok");
+            setStatus("Computed " + n + " frame-interval cut points.", "ok");
         }
+        return result;
     }
 
+    /**
+     * Preview markers ONLY. Does not run razor cuts.
+     * Auto-resolves cut points if none are cached so the action is independent
+     * from "Detect Beats".
+     */
     function onPreviewMarkers() {
-        if (!state.beats.length) {
-            setStatus("Detect beats first.", "error");
-            return;
-        }
-        setStatus("Placing preview markers...", "busy");
-        jsx("BeatSync.previewMarkers(" + arg({ beats: state.beats }) + ");").then(function (res) {
-            if (!res.ok) {
-                setStatus(res.error || "Failed to place markers.", "error");
-                return;
-            }
-            setStatus("Placed " + (res.added || state.beats.length) + " preview markers.", "ok");
+        var opts = getBeatSyncOpts();
+        setStatus("Resolving cut points...", "busy");
+        resolveCutTimes(opts, false).then(function (result) {
+            applyCutResult(result);
+            if (!state.cutTimes.length) return;
+            setStatus("Placing preview markers...", "busy");
+            return jsx("BeatSync.previewMarkers(" + arg({ beats: state.cutTimes }) + ");").then(function (res) {
+                if (!res || !res.ok) {
+                    setStatus((res && res.error) || "Failed to place markers.", "error");
+                    return;
+                }
+                setStatus("Placed " + (res.added || state.cutTimes.length) + " markers (no cuts made).", "ok");
+            });
         });
     }
 
+    /**
+     * Apply razor cuts ONLY. Does not place markers.
+     * Auto-resolves cut points if none are cached so the action is independent
+     * from "Preview Markers".
+     */
     function onApplyCuts() {
-        if (!state.beats.length) {
-            setStatus("Detect beats first.", "error");
-            return;
-        }
         var opts = getBeatSyncOpts();
-        setStatus("Applying razor cuts...", "busy");
-        jsx("BeatSync.applyCuts(" + arg({ beats: state.beats, options: opts }) + ");").then(function (res) {
-            if (!res.ok) {
-                setStatus(res.error || "Failed to apply cuts.", "error");
-                return;
-            }
-            setStatus("Applied " + (res.cuts || state.beats.length) + " cuts.", "ok");
+        setStatus("Resolving cut points...", "busy");
+        resolveCutTimes(opts, false).then(function (result) {
+            applyCutResult(result);
+            if (!state.cutTimes.length) return;
+            setStatus("Applying razor cuts...", "busy");
+            return jsx("BeatSync.applyCuts(" + arg({ beats: state.cutTimes, options: opts }) + ");").then(function (res) {
+                if (!res || !res.ok) {
+                    setStatus((res && res.error) || "Failed to apply cuts.", "error");
+                    return;
+                }
+                setStatus("Applied " + (res.cuts || state.cutTimes.length) + " cuts (no markers placed).", "ok");
+            });
         });
     }
 
@@ -496,8 +587,27 @@
         });
     }
 
+    function bindTabs() {
+        $$(".tab-btn").forEach(function (btn) {
+            btn.addEventListener("click", function () {
+                var target = btn.getAttribute("data-tab");
+                $$(".tab-btn").forEach(function (b) {
+                    var active = (b.getAttribute("data-tab") === target);
+                    b.classList.toggle("active", active);
+                    b.setAttribute("aria-selected", active ? "true" : "false");
+                });
+                $$(".tab-panel").forEach(function (p) {
+                    var active = (p.getAttribute("data-tab-panel") === target);
+                    p.classList.toggle("active", active);
+                    p.hidden = !active;
+                });
+            });
+        });
+    }
+
     function init() {
         loadHostScripts();
+        bindTabs();
         bindBeatSync();
         bindPodcast();
         bindCreditLink();

@@ -48,6 +48,53 @@ var BeatSync = (function () {
     }
 
     /**
+     * Resolve the active cut range for the current beat-sync options.
+     * Honours the Range Mode radio (Full Clip / In-Out Range Only) and resolves
+     * In/Out by reading sequence.getInPoint / getOutPoint when available.
+     * Returns: { ok, start, end, fps, duration }.
+     */
+    function getCutRange(optsJson) {
+        var seq = SmartEditPro.getActiveSequence();
+        if (!seq) return SmartEditPro.error("No active sequence.");
+        var opts = safeParse(optsJson, {});
+        var start = 0;
+        var end = 0;
+        var fps = 30;
+        try {
+            if (seq.timebase) {
+                fps = SmartEditPro.TICKS_PER_SECOND / Number(seq.timebase);
+            }
+            if (seq.end) {
+                end = Number(seq.end) / SmartEditPro.TICKS_PER_SECOND;
+            }
+            if (opts.range === "inout") {
+                try {
+                    var inP = (typeof seq.getInPoint === "function") ? seq.getInPoint() : null;
+                    var outP = (typeof seq.getOutPoint === "function") ? seq.getOutPoint() : null;
+                    if (inP && typeof inP === "string") start = Number(inP) / SmartEditPro.TICKS_PER_SECOND;
+                    else if (inP && inP.ticks) start = Number(inP.ticks) / SmartEditPro.TICKS_PER_SECOND;
+                    else if (inP && typeof inP === "number") start = inP;
+                    if (outP && typeof outP === "string") end = Number(outP) / SmartEditPro.TICKS_PER_SECOND;
+                    else if (outP && outP.ticks) end = Number(outP.ticks) / SmartEditPro.TICKS_PER_SECOND;
+                    else if (outP && typeof outP === "number") end = outP;
+                } catch (eIO) {
+                    // Stick with full-range fallback.
+                }
+            }
+        } catch (e) {
+            return SmartEditPro.error("Could not read cut range: " + e);
+        }
+        if (!end || end <= start) end = start + 60;
+        return SmartEditPro.respond({
+            ok: true,
+            start: start,
+            end: end,
+            fps: fps,
+            duration: end - start
+        });
+    }
+
+    /**
      * Tries to render the chosen audio track to a WAV in the OS temp folder
      * using Premiere's exportAsMediaDirect API.  When that API is unavailable
      * we still return a useful response so main.js can fall back to a synthetic
@@ -196,6 +243,7 @@ var BeatSync = (function () {
 
     return {
         getSequenceDuration: getSequenceDuration,
+        getCutRange: getCutRange,
         exportTrackAudio: exportTrackAudio,
         previewMarkers: previewMarkers,
         applyCuts: applyCuts,

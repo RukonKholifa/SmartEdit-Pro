@@ -1,14 +1,17 @@
 # SmartEdit Pro
 
 An Adobe Premiere Pro CEP extension that bundles **two** automated-editing tools
-into a single dark-themed panel:
+into a single dark-themed tabbed panel:
 
-1. **Beat Sync Cutter** &mdash; analyzes a music track on the timeline, detects
-   beats with the Web Audio API, and razor-cuts the chosen video clip(s) on
-   every Nth beat.
-2. **Podcast Smart Switcher** &mdash; for 2-3 person podcast recordings, samples
-   each speaker's mic track, builds an edit decision list, and switches the
-   visible camera to whoever is actually speaking.
+1. **Beat Sync** &mdash; analyzes a music track on the timeline, detects beats
+   with the Web Audio API, and razor-cuts the chosen video clip(s) on every
+   Nth beat. Also supports a **Fixed Frames** mode that cuts every N frames
+   without any audio analysis.
+2. **Podcast** &mdash; for 2-3 person podcast recordings, samples each speaker's
+   mic track, builds an edit decision list, and switches the visible camera to
+   whoever is actually speaking by razoring the timeline and toggling
+   `clip.disabled` (video) / `clip.setMute(true)` (audio) on the non-active
+   tracks. Nothing is deleted, so **Undo** fully reverts the edit.
 
 > Target host: **Adobe Premiere Pro 2022+ (CEP 11+)**.
 > Tested against Premiere Pro 23.x.
@@ -82,35 +85,49 @@ panel docks like any other Premiere panel and is `320 x 600 px` by default.
 
 ## Using the panel
 
-### Beat Sync Cutter
+Switch between the two tools using the **Beat Sync** / **Podcast** tabs at the
+top of the panel.
+
+### Beat Sync tab
 
 1. Open a sequence with a music track and at least one video clip.
 2. Pick the **Music Track** that contains the beat reference.
 3. Choose **Selected Clip** or **All clips on V1** as the cut target.
-4. Set **Cut every N beats** (1 - 8), **Beat Sensitivity** (1 - 100) and the
-   **Min Audio Level (dB)** floor.
+4. Pick a **Frame Interval Mode**:
+   - **Beat Based** &mdash; analyzes audio and cuts on detected beats. Uses
+     **Cut every N beats** (1 - 8), **Beat Sensitivity** (1 - 100) and the
+     **Min Audio Level (dB)** floor.
+   - **Fixed Frames** &mdash; skips audio analysis entirely and cuts at
+     **Cut every N frames** across the chosen range.
 5. Choose **Full Clip** or **In/Out Range Only**.
-6. Click **Detect Beats**. The panel renders the music track to a temp WAV,
-   runs the Web Audio onset detector, and reports the count.
-7. Click **Preview Markers** to drop sequence markers at every beat for review.
-   Use **Clear Markers** to remove them.
-8. Click **Apply Cuts** to razor the timeline at every beat.
+6. (Beat Based only) Click **Detect Beats** to pre-compute the beat grid.
+7. Click **Preview Markers** to drop sequence markers at every cut point
+   *without* making cuts. Click **Clear Markers** to remove them.
+8. Click **Apply Cuts** to razor the timeline *without* placing markers.
+   Preview Markers and Apply Cuts are independent &mdash; either can be used
+   on its own and will auto-resolve cut points if needed.
 
 > If Premiere can't expose the music track as a WAV in the current host
 > version, the panel automatically falls back to a synthetic 120 BPM beat
 > grid scaled by the sensitivity slider so the workflow still works.
 
-### Podcast Smart Switcher
+### Podcast tab
 
 1. Pick **Number of Speakers** (2 or 3).
 2. For each speaker, set the **name**, **mic track** and **camera track**.
 3. Tune **Silence threshold (dB)**, **Min Switch Duration (ms)** and
    **Buffer Frames** for the edit you want.
-4. Click **Analyze & Preview** &mdash; the panel samples each mic track, builds
-   an edit decision list and renders a colored timeline preview where each
-   color represents the active speaker.
-5. Click **Apply Edit** to razor-cut the timeline and toggle camera tracks so
-   only the active speaker's camera is visible per segment.
+4. Click **Analyze & Preview** &mdash; the panel samples each mic track, picks
+   the loudest speaker per moment, smooths runs shorter than the min-switch
+   duration, and renders a colored timeline preview where each color
+   represents the active speaker.
+5. Click **Apply Edit** to:
+   1. razor every camera and mic track at every segment boundary,
+   2. set `clip.disabled = true` on every camera-track clip whose midpoint
+      falls inside a segment for which a *different* speaker is active,
+   3. call `clip.setMute(true)` on every mic-track clip in the same situation
+      (falling back to `clip.disabled` if `setMute` is unavailable).
+   Nothing is deleted, so the entire flow is reversible.
 6. **Undo** reverts the last edit by calling `app.undo()` inside Premiere.
 
 ---
