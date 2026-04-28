@@ -482,10 +482,25 @@
         });
     }
 
+    function bindCreditLink() {
+        var link = $("#credit-link");
+        if (!link) return;
+        link.addEventListener("click", function (e) {
+            e.preventDefault();
+            var url = link.getAttribute("data-url");
+            if (cs && typeof cs.openURLInDefaultBrowser === "function") {
+                cs.openURLInDefaultBrowser(url);
+            } else if (typeof window !== "undefined") {
+                window.open(url, "_blank");
+            }
+        });
+    }
+
     function init() {
         loadHostScripts();
         bindBeatSync();
         bindPodcast();
+        bindCreditLink();
         loadTracks().then(function () {
             refreshTrackSelects();
             renderSpeakerTable();

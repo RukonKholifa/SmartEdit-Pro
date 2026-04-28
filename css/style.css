@@ -367,3 +367,23 @@ input[type="range"].slider::-webkit-slider-thumb {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.35; }
 }
+
+/* ----- credit footer ----- */
+.credit-footer {
+    flex: 0 0 auto;
+    margin: 0 10px 8px;
+    padding-top: 6px;
+    border-top: 1px solid var(--border);
+    font-size: 11px;
+    color: #666;
+    text-align: center;
+}
+.credit-footer a {
+    color: #666;
+    text-decoration: none;
+    cursor: pointer;
+}
+.credit-footer a:hover {
+    color: var(--accent);
+    text-decoration: underline;
+}
