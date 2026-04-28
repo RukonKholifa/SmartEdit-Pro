@@ -496,16 +496,247 @@
 
     function onAnalyzePodcast() {
         var opts = getPodcastOpts();
-        setStatus("Analyzing mic tracks...", "busy");
-        jsx("PodcastSwitch.analyze(" + arg(opts) + ");").then(function (res) {
+        setStatus("Resolving mic clips...", "busy");
+        analyzePodcastWithAudio(opts).then(function (res) {
             if (!res.ok) {
                 setStatus(res.error || "Analyze failed.", "error");
                 return;
             }
             state.podcastEdl = res.edl || [];
-            renderPodcastPreview(state.podcastEdl, res.duration || 0);
-            setStatus("Plan ready: " + state.podcastEdl.length + " segments.", "ok");
+            state.podcastDuration = res.duration || 0;
+            renderPodcastPreview(state.podcastEdl, state.podcastDuration);
+            setStatus("Plan ready: " + state.podcastEdl.length + " segments (" +
+                (res.source === "audio" ? "real audio" : "fallback") + ").", "ok");
         });
+    }
+
+    /**
+     * Full podcast analysis pipeline:
+     *   1. PodcastSwitch.resolveMicClips -> per-speaker {mediaPath, seqStart, ...}
+     *   2. Web Audio API decode every mic file via Node.js fs.readFileSync
+     *   3. RMS over 500ms windows across the sequence duration
+     *   4. Pick loudest speaker per window, smooth with minSwitchMs
+     *   5. Build EDL. If any stage fails, fall back to the ExtendScript analyze
+     *      so the panel still produces a usable segmentation.
+     */
+    function analyzePodcastWithAudio(opts) {
+        return jsx("PodcastSwitch.resolveMicClips(" + arg(opts) + ");").then(function (info) {
+            if (!info.ok) return { ok: false, error: info.error || "Could not resolve mic clips." };
+            var duration = info.duration || 0;
+            var speakers = info.speakers || [];
+            if (!duration || !speakers.length) {
+                return fallbackAnalyze(opts);
+            }
+
+            setStatus("Decoding mic audio...", "busy");
+            var windowSec = 0.5;
+            var winCount = Math.max(1, Math.floor(duration / windowSec));
+            var speakerRms = speakers.map(function () { return new Array(winCount); });
+            for (var s = 0; s < speakerRms.length; s++) {
+                for (var w = 0; w < winCount; w++) speakerRms[s][w] = -200;
+            }
+
+            var decodeJobs = [];
+            speakers.forEach(function (sp, speakerIdx) {
+                (sp.clips || []).forEach(function (clip) {
+                    if (!clip.mediaPath) return;
+                    decodeJobs.push(decodeAndFillRms(clip, speakerIdx, speakerRms, windowSec, duration));
+                });
+            });
+
+            if (!decodeJobs.length) {
+                return fallbackAnalyze(opts);
+            }
+
+            return Promise.all(decodeJobs).then(function (results) {
+                var anyOk = results.some(function (r) { return r && r.ok; });
+                if (!anyOk) {
+                    return fallbackAnalyze(opts);
+                }
+                var edl = buildEdlFromRms(speakerRms, speakers, opts, duration, windowSec);
+                return { ok: true, edl: edl, duration: duration, source: "audio" };
+            });
+        });
+    }
+
+    function fallbackAnalyze(opts) {
+        return jsx("PodcastSwitch.analyze(" + arg(opts) + ");").then(function (res) {
+            if (!res.ok) return res;
+            return { ok: true, edl: res.edl || [], duration: res.duration || 0, source: "fallback" };
+        });
+    }
+
+    /**
+     * Decode one mic clip's media file off disk via Node's fs, hand it to the
+     * browser AudioContext, compute RMS per windowSec, and merge into the
+     * shared speakerRms[speakerIdx] buffer at the clip's sequence position.
+     */
+    function decodeAndFillRms(clip, speakerIdx, speakerRms, windowSec, duration) {
+        return readFileAsArrayBuffer(clip.mediaPath).then(function (buf) {
+            if (!buf) return { ok: false };
+            var ctx = getAudioContext();
+            if (!ctx) return { ok: false };
+            return new Promise(function (resolve) {
+                ctx.decodeAudioData(buf.slice(0), function (audioBuffer) {
+                    mergeRmsIntoBuffer(audioBuffer, clip, speakerIdx, speakerRms, windowSec, duration);
+                    resolve({ ok: true });
+                }, function (err) {
+                    logSafe("decodeAudioData failed for " + clip.mediaPath + ": " + err);
+                    resolve({ ok: false });
+                });
+            });
+        }, function () { return { ok: false }; });
+    }
+
+    function mergeRmsIntoBuffer(audioBuffer, clip, speakerIdx, speakerRms, windowSec, duration) {
+        var sr = audioBuffer.sampleRate;
+        var channels = audioBuffer.numberOfChannels;
+        var samplesPerWindow = Math.max(1, Math.round(windowSec * sr));
+        var windowsInClip = Math.floor(audioBuffer.length / samplesPerWindow);
+        var inPointSamples = Math.round((clip.inPoint || 0) * sr);
+        var target = speakerRms[speakerIdx];
+        var totalWindows = target.length;
+
+        // Read all channel data once (mix to mono via average).
+        var chData = [];
+        for (var ch = 0; ch < channels; ch++) {
+            chData.push(audioBuffer.getChannelData(ch));
+        }
+
+        for (var w = 0; w < windowsInClip; w++) {
+            var i0 = inPointSamples + w * samplesPerWindow;
+            var i1 = Math.min(audioBuffer.length, i0 + samplesPerWindow);
+            if (i0 >= audioBuffer.length) break;
+            var sumSq = 0;
+            var n = 0;
+            for (var ch2 = 0; ch2 < channels; ch2++) {
+                var data = chData[ch2];
+                for (var i = i0; i < i1; i += 4) {
+                    var v = data[i] || 0;
+                    sumSq += v * v;
+                    n++;
+                }
+            }
+            var rms = Math.sqrt(sumSq / Math.max(1, n));
+            var db = rms > 0 ? 20 * Math.log(rms) / Math.LN10 : -200;
+
+            // Map this clip-relative window index to a sequence-relative window.
+            var seqTime = (clip.seqStart || 0) + w * windowSec;
+            var seqWin = Math.floor(seqTime / windowSec);
+            if (seqWin < 0 || seqWin >= totalWindows) continue;
+            if (db > target[seqWin]) target[seqWin] = db;
+        }
+    }
+
+    function buildEdlFromRms(speakerRms, speakers, opts, duration, windowSec) {
+        var totalWindows = (speakerRms[0] || []).length;
+        var silenceDb = (typeof opts.silenceDb === "number") ? opts.silenceDb : -40;
+        var minSwitchSec = Math.max(0, (opts.minSwitchMs || 500)) / 1000;
+        var minSwitchWindows = Math.max(1, Math.round(minSwitchSec / windowSec));
+
+        // 1) Per-window winner.
+        var winners = new Array(totalWindows);
+        for (var w = 0; w < totalWindows; w++) {
+            var bestIdx = -1;
+            var bestVal = silenceDb;
+            for (var s = 0; s < speakerRms.length; s++) {
+                var v = speakerRms[s][w];
+                if (v > bestVal) {
+                    bestVal = v;
+                    bestIdx = s;
+                }
+            }
+            winners[w] = bestIdx;
+        }
+
+        // 2) Fill silent windows with the previous speaker so there are no
+        //    1-window gaps for a single cough or breath.
+        var last = -1;
+        for (var ww = 0; ww < winners.length; ww++) {
+            if (winners[ww] >= 0) last = winners[ww];
+            else if (last >= 0) winners[ww] = last;
+        }
+
+        // 3) Smooth runs shorter than minSwitchWindows into the preceding run.
+        var smoothed = winners.slice();
+        var runStart = 0;
+        for (var k = 1; k <= smoothed.length; k++) {
+            if (k === smoothed.length || smoothed[k] !== smoothed[runStart]) {
+                if (k - runStart < minSwitchWindows && runStart > 0) {
+                    for (var j = runStart; j < k; j++) smoothed[j] = smoothed[runStart - 1];
+                }
+                runStart = k;
+            }
+        }
+
+        // 4) Emit segments.
+        var edl = [];
+        var segStart = 0;
+        for (var p = 1; p <= smoothed.length; p++) {
+            if (p === smoothed.length || smoothed[p] !== smoothed[segStart]) {
+                var idx = smoothed[segStart];
+                var name = (idx >= 0 && speakers[idx]) ? (speakers[idx].name || ("Speaker " + (idx + 1))) : "Silence";
+                edl.push({
+                    start: segStart * windowSec,
+                    end: Math.min(duration, p * windowSec),
+                    speakerIdx: idx,
+                    speakerName: name
+                });
+                segStart = p;
+            }
+        }
+        return edl;
+    }
+
+    /* ---- Node-backed file reader (CEP has --enable-nodejs) ---- */
+    function readFileAsArrayBuffer(path) {
+        return new Promise(function (resolve) {
+            if (!path) { resolve(null); return; }
+            try {
+                var fs = requireNode("fs");
+                if (!fs) { resolve(null); return; }
+                fs.readFile(path, function (err, data) {
+                    if (err) {
+                        logSafe("fs.readFile failed for '" + path + "': " + err);
+                        resolve(null);
+                        return;
+                    }
+                    // Node Buffer -> ArrayBuffer
+                    var ab = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+                    resolve(ab);
+                });
+            } catch (e) {
+                logSafe("readFile threw: " + e);
+                resolve(null);
+            }
+        });
+    }
+
+    function requireNode(mod) {
+        try {
+            if (typeof window !== "undefined" && typeof window.cep_node !== "undefined" && window.cep_node.require) {
+                return window.cep_node.require(mod);
+            }
+            if (typeof require === "function") return require(mod);
+        } catch (e) {}
+        return null;
+    }
+
+    var _audioCtx = null;
+    function getAudioContext() {
+        if (_audioCtx) return _audioCtx;
+        try {
+            var Ctx = window.AudioContext || window.webkitAudioContext;
+            if (!Ctx) return null;
+            _audioCtx = new Ctx();
+        } catch (e) {
+            _audioCtx = null;
+        }
+        return _audioCtx;
+    }
+
+    function logSafe(msg) {
+        try { jsx('PodcastSwitch.debugLog(' + JSON.stringify(String(msg)) + ');'); } catch (e) {}
     }
 
     function renderPodcastPreview(edl, duration) {
@@ -530,18 +761,43 @@
     }
 
     function onApplyPodcast() {
-        if (!state.podcastEdl.length) {
-            setStatus("Analyze first.", "error");
-            return;
-        }
         var opts = getPodcastOpts();
-        setStatus("Applying podcast edit...", "busy");
-        jsx("PodcastSwitch.applyEdit(" + arg({ edl: state.podcastEdl, options: opts }) + ");").then(function (res) {
-            if (!res.ok) {
-                setStatus(res.error || "Apply failed.", "error");
+        setStatus("Preparing apply...", "busy");
+        // Ensure we have an EDL. If the user never clicked Analyze first, run
+        // the full audio pipeline inline so Apply is a one-shot action.
+        var prep;
+        if (state.podcastEdl.length) {
+            prep = Promise.resolve({ ok: true, edl: state.podcastEdl, duration: state.podcastDuration, source: "cached" });
+        } else {
+            prep = analyzePodcastWithAudio(opts);
+        }
+        prep.then(function (a) {
+            if (!a.ok) {
+                setStatus(a.error || "Analyze failed.", "error");
                 return;
             }
-            setStatus("Edit applied (" + (res.cuts || 0) + " cuts).", "ok");
+            state.podcastEdl = a.edl || [];
+            state.podcastDuration = a.duration || state.podcastDuration || 0;
+            renderPodcastPreview(state.podcastEdl, state.podcastDuration);
+            if (!state.podcastEdl.length) {
+                setStatus("No segments produced - check mic track mapping.", "error");
+                return;
+            }
+            setStatus("Applying " + state.podcastEdl.length + " segments...", "busy");
+            jsx("PodcastSwitch.applyEdit(" + arg({ edl: state.podcastEdl, options: opts }) + ");").then(function (res) {
+                // Fallback path: some hosts return "undefined" when the script
+                // throws silently. We re-query the debug file path either way.
+                if (!res || !res.ok) {
+                    var err = (res && res.error) ? res.error : "Apply failed.";
+                    setStatus(err + "  See debug log (C:\\SmartEditPro_debug.txt).", "error");
+                    return;
+                }
+                var msg = "Applied " + (res.cuts || 0) + " cuts across " +
+                    (res.segments || 0) + " segments" +
+                    (res.clipsTouched ? " (" + (res.clipsEnabled || 0) + " kept, " +
+                        (res.clipsDisabled || 0) + " disabled)." : ".");
+                setStatus(msg, "ok");
+            });
         });
     }
 
